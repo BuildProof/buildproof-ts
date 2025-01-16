@@ -54,9 +54,13 @@ const MultiSlider = ({ sliders: initialSliders, className, ...props }: MultiSlid
         return b.value - a.value
       }
       
-      // Si les deux sont positifs ou les deux sont négatifs,
-      // on trie par valeur absolue décroissante
-      return Math.abs(b.value) - Math.abs(a.value)
+      // Si les deux sont positifs, trier par ordre décroissant
+      if (a.value >= 0 && b.value >= 0) {
+        return b.value - a.value
+      }
+      
+      // Si les deux sont négatifs, trier par ordre croissant
+      return a.value - b.value
     })
     setSortedSliders(newSortedSliders)
   }
