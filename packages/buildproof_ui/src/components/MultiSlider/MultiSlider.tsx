@@ -16,7 +16,10 @@ interface MultiSliderProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const MultiSlider = ({ sliders: initialSliders, className, ...props }: MultiSliderProps) => {
-  const [sortedSliders, setSortedSliders] = useState(initialSliders)
+  // Trier les sliders initialement par montant d'ETH décroissant
+  const sortedInitialSliders = [...initialSliders].sort((a, b) => b.totalEth - a.totalEth)
+  const [sortedSliders, setSortedSliders] = useState(sortedInitialSliders)
+  const totalEth = initialSliders.reduce((sum, slider) => sum + slider.totalEth, 0)
 
   // Mettre à jour les valeurs des sliders quand elles changent
   useEffect(() => {
@@ -49,18 +52,41 @@ const MultiSlider = ({ sliders: initialSliders, className, ...props }: MultiSlid
   const handlePointerUp = () => {
     // Trier les sliders du plus grand au plus petit
     const newSortedSliders = [...sortedSliders].sort((a, b) => {
+      // Si les deux valeurs sont à 0, trier par montant d'ETH décroissant
+      if (a.value === 0 && b.value === 0) {
+        return b.totalEth - a.totalEth
+      }
+
+      // Si une seule valeur est à 0, la mettre après les valeurs non nulles
+      if (a.value === 0) return 1
+      if (b.value === 0) return -1
+
       // Si l'un est positif et l'autre négatif, le positif va en premier
       if ((a.value >= 0 && b.value < 0) || (a.value < 0 && b.value >= 0)) {
         return b.value - a.value
       }
       
-      // Si les deux sont positifs, trier par ordre décroissant
+      // Si les deux sont positifs
       if (a.value >= 0 && b.value >= 0) {
+        // Si les valeurs sont égales, trier par montant d'ETH
+        if (a.value === b.value) {
+          return b.totalEth - a.totalEth
+        }
+        // Sinon trier par valeur décroissante
         return b.value - a.value
       }
       
-      // Si les deux sont négatifs, trier par ordre croissant
-      return a.value - b.value
+      // Si les deux sont négatifs
+      if (a.value < 0 && b.value < 0) {
+        // Si les valeurs sont égales, trier par montant d'ETH
+        if (a.value === b.value) {
+          return b.totalEth - a.totalEth
+        }
+        // Pour les négatifs, on trie par valeur croissante (les plus proches de 0 d'abord)
+        return Math.abs(a.value) - Math.abs(b.value)
+      }
+      
+      return 0
     })
     setSortedSliders(newSortedSliders)
   }
@@ -69,62 +95,68 @@ const MultiSlider = ({ sliders: initialSliders, className, ...props }: MultiSlid
 
   return (
     <div className={cn('flex flex-col gap-4', className)} {...props}>
-      {sortedSliders.map((slider) => (
-        <div key={slider.id} className="flex items-center gap-4 w-full">
-          <div className="flex items-center gap-2 min-w-[120px]">
-            <span className="text-sm font-medium">{slider.projectName}</span>
-          </div>
-          
-          <div className="flex items-center gap-2 min-w-[100px]">
-            <span className="text-sm text-secondary/70">{slider.votesCount} signals</span>
-          </div>
-          
-          <div className="flex items-center gap-2 min-w-[80px]">
-            <span className="text-sm text-secondary/70">{formatEth(slider.totalEth)} ETH</span>
-          </div>
+      {sortedSliders.map((slider) => {
+        // Calculer le pourcentage d'ETH pour l'affichage de la barre
+        const ethPercentage = (slider.totalEth / totalEth) * 100
+        
+        return (
+          <div key={slider.id} className="flex items-center gap-4 w-full">
+            <div className="flex items-center gap-2 min-w-[120px]">
+              <span className="text-sm font-medium">{slider.projectName}</span>
+            </div>
+            
+            <div className="flex items-center gap-2 min-w-[100px]">
+              <span className="text-sm text-secondary/70">{slider.votesCount} signals</span>
+            </div>
+            
+            <div className="flex items-center gap-2 min-w-[80px]">
+              <span className="text-sm text-secondary/70">{formatEth(slider.totalEth)} ETH</span>
+            </div>
 
-          <div className="flex-1 relative">
-            <div className="absolute left-1/2 top-1/2 h-[2px] w-[2px] -translate-x-1/2 -translate-y-1/2 bg-border/20" />
-            <SliderPrimitive.Root
-              className="relative flex items-center w-full h-5 touch-none"
-              value={[slider.value]}
-              max={100}
-              min={-100}
-              step={1}
-              onValueChange={(value: number[]) => handleValueChange(slider.onChange, slider.id)(value)}
-              onPointerUp={handlePointerUp}
-            >
-              <SliderPrimitive.Track className="relative h-[6px] grow rounded-full">
-                <div className="absolute w-full h-full rounded-full bg-border/20" />
-                <SliderPrimitive.Range
+            <div className="flex-1 relative">
+              <div className="absolute left-1/2 top-1/2 h-[2px] w-[2px] -translate-x-1/2 -translate-y-1/2 bg-border/20" />
+              <SliderPrimitive.Root
+                className="relative flex items-center w-full h-5 touch-none"
+                value={[slider.value]}
+                max={100}
+                min={-100}
+                step={1}
+                onValueChange={(value: number[]) => handleValueChange(slider.onChange, slider.id)(value)}
+                onPointerUp={handlePointerUp}
+              >
+                <SliderPrimitive.Track className="relative h-[6px] grow rounded-full">
+                  <div className="absolute w-full h-full rounded-full bg-border/20" />
+                  <SliderPrimitive.Range
+                    className={cn(
+                      'absolute h-full rounded-full transition-colors duration-200',
+                      slider.value >= 0 ? 'bg-for' : 'bg-against'
+                    )}
+                    style={{
+                      left: slider.value < 0 ? `${50 - (ethPercentage / 2)}%` : '50%',
+                      right: slider.value > 0 ? `${50 - (ethPercentage / 2)}%` : '50%',
+                      width: `${ethPercentage}%`
+                    }}
+                  />
+                </SliderPrimitive.Track>
+                <SliderPrimitive.Thumb
                   className={cn(
-                    'absolute h-full rounded-full transition-colors duration-200',
-                    slider.value >= 0 ? 'bg-for' : 'bg-against'
+                    'block h-4 w-4 rounded-full border-2 bg-background transition-colors duration-200',
+                    'focus:outline-none focus:ring-2 focus:ring-ring',
+                    'hover:cursor-grab active:cursor-grabbing',
+                    slider.value >= 0 ? 'border-for' : 'border-against'
                   )}
-                  style={{
-                    left: slider.value < 0 ? `${50 + slider.value / 2}%` : '50%',
-                    right: slider.value > 0 ? `${50 - slider.value / 2}%` : '50%',
-                  }}
                 />
-              </SliderPrimitive.Track>
-              <SliderPrimitive.Thumb
-                className={cn(
-                  'block h-4 w-4 rounded-full border-2 bg-background transition-colors duration-200',
-                  'focus:outline-none focus:ring-2 focus:ring-ring',
-                  'hover:cursor-grab active:cursor-grabbing',
-                  slider.value >= 0 ? 'border-for' : 'border-against'
-                )}
-              />
-            </SliderPrimitive.Root>
-          </div>
+              </SliderPrimitive.Root>
+            </div>
 
-          <div className="min-w-[50px] text-right">
-            <span className="text-sm font-medium">
-              {slider.value > 0 ? '+' : ''}{slider.value}%
-            </span>
+            <div className="min-w-[50px] text-right">
+              <span className="text-sm font-medium">
+                {slider.value > 0 ? '+' : ''}{slider.value}%
+              </span>
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
