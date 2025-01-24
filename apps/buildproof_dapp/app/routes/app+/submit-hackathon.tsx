@@ -1,23 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Button, ButtonVariant, ButtonSize, Input, Textarea, Dialog, DialogContent, DialogHeader, DialogTitle } from '@0xintuition/buildproof_ui';
+import { Button, ButtonVariant, ButtonSize } from '@0xintuition/buildproof_ui';
 import { usePrivy } from '@privy-io/react-auth';
 import { useNavigate, useLoaderData } from '@remix-run/react';
-import { useBatchCreateTriple } from '../../lib/hooks/useBatchCreateTriple';
-import { useBatchCreateAtom } from '../../lib/hooks/useBatchCreateAtom';
+import { usePublicClient, useWalletClient } from 'wagmi';
+import { json, LoaderFunctionArgs } from '@remix-run/node';
+import { BasicInfoForm } from '../../components/submit-hackathon/BasicInfoForm';
+import { DateSelection } from '../../components/submit-hackathon/DateSelection';
+import { ConfirmationDialog } from '../../components/submit-hackathon/ConfirmationDialog';
 import PrizeDistribution from '../../components/submit-hackathon/prize-distribution';
 import type { Prize } from '../../components/submit-hackathon/prize-distribution';
-import { multivaultAbi } from '@lib/abis/multivault';
-import { MULTIVAULT_CONTRACT_ADDRESS } from 'app/consts';
-import { usePublicClient } from 'wagmi';
-import { keccak256, toHex } from 'viem';
-import { json, LoaderFunctionArgs } from '@remix-run/node';
+import { uploadToIPFS, uploadTextToIPFS } from '../../services/ipfs';
+import { multivaultAbi } from '../../lib/abis/multivault';
+import { MULTIVAULT_CONTRACT_ADDRESS } from '../../consts';
+import { keccak256, toHex, type Address } from 'viem';
+import { PrizeSection } from '../../components/submit-hackathon/PrizeSection';
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Vérifier si la variable est définie dans l'environnement
   const pinataJwt = process.env.PINATA_JWT_KEY;
-  
-  // Si la variable n'est pas définie, on retourne quand même mais avec une valeur null
-  // Cela nous permettra de gérer l'erreur côté client de manière plus élégante
   return json({
     env: {
       PINATA_JWT: pinataJwt || null
@@ -27,8 +26,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 const SubmitHackathon = () => {
   const { env } = useLoaderData<typeof loader>();
-  const { authenticated, ready, login } = usePrivy()
-  const navigate = useNavigate()
+  const { authenticated, ready, login } = usePrivy();
+  const navigate = useNavigate();
+  const publicClient = usePublicClient();
+  const { data: walletClient } = useWalletClient();
+
+  // Form state
   const [partnerName, setPartnerName] = useState('');
   const [hackathonTitle, setHackathonTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -38,63 +41,44 @@ const SubmitHackathon = () => {
   const [prizes, setPrizes] = useState<Prize[]>([
     { name: 'First Place', amount: 0, percent: 0 }
   ]);
+
+  // UI state
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [triples, setTriples] = useState<any[]>([]);
-  const [validatedTriples, setValidatedTriples] = useState<any[]>([]);
-  const publicClient = usePublicClient();
-  const { writeContractAsync: writeBatchCreateAtom } = useBatchCreateAtom();
 
-  const {
-    writeContractAsync: writeBatchCreateTriple,
-    awaitingWalletConfirmation,
-    awaitingOnChainConfirmation,
-  } = useBatchCreateTriple()
-
-  const checkTripleExists = async (subject: string | number | bigint, predicate: string | number | bigint, object: string | number | bigint): Promise<bigint | null> => {
-    if (!publicClient) return null;
-    
-    try {
-      // Convert components to atom IDs if they are strings
-      const subjectId = typeof subject === 'string' ? await checkAtomExists(subject) : BigInt(subject.toString());
-      const predicateId = typeof predicate === 'string' ? await checkAtomExists(predicate) : BigInt(predicate.toString());
-      const objectId = typeof object === 'string' ? await checkAtomExists(object) : BigInt(object.toString());
-
-      if (!subjectId || !predicateId || !objectId) {
-        return null;
-      }
-
-      const exists = await publicClient.readContract({
-        address: MULTIVAULT_CONTRACT_ADDRESS,
-        abi: multivaultAbi,
-        functionName: 'isTriple',
-        args: [subjectId, predicateId, objectId]
-      }) as boolean;
-      
-      if (exists) {
-        // Si le triple existe, on retourne un ID non-null (1n)
-        // L'ID exact n'est pas important puisqu'on vérifie juste l'existence
-        return 1n;
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('Error checking triple:', error);
-      return null;
-    }
-  };
+  // Add loading states
+  const [isCreatingAtoms, setIsCreatingAtoms] = useState(false);
+  const [isCreatingTriples, setIsCreatingTriples] = useState(false);
 
   useEffect(() => {
     if (ready && !authenticated) {
-      navigate('/login?redirectTo=/app/submit-hackathon')
+      navigate('/login?redirectTo=/app/submit-hackathon');
     }
-  }, [ready, authenticated, navigate])
+  }, [ready, authenticated, navigate]);
+
+  // Update wallet connection check
+  useEffect(() => {
+    const connectWallet = async () => {
+      if (authenticated && !walletClient) {
+        try {
+          await login();
+          // Add a small delay to allow wallet connection to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error('Failed to connect wallet:', error);
+        }
+      }
+    };
+
+    connectWallet();
+  }, [authenticated, walletClient, login]);
 
   if (!ready || !authenticated) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
       </div>
-    )
+    );
   }
 
   const checkAtomExists = async (value: string): Promise<bigint | null> => {
@@ -103,7 +87,7 @@ const SubmitHackathon = () => {
     try {
       const atomHash = keccak256(toHex(value));
       const atomId = await publicClient.readContract({
-        address: MULTIVAULT_CONTRACT_ADDRESS,
+        address: MULTIVAULT_CONTRACT_ADDRESS as `0x${string}`,
         abi: multivaultAbi,
         functionName: 'atomsByHash',
         args: [atomHash]
@@ -114,30 +98,10 @@ const SubmitHackathon = () => {
     }
   };
 
-  const createMissingAtoms = async (atomValues: string[]) => {
-    if (atomValues.length === 0) return null;
-    
-    try {
-      const valuePerAtom = BigInt("1000000000000000"); // 0.001 ETH par atome
-      const hash = await writeBatchCreateAtom({
-        address: MULTIVAULT_CONTRACT_ADDRESS,
-        abi: multivaultAbi,
-        functionName: 'batchCreateAtom',
-        args: [atomValues.map(v => toHex(v))],
-        value: valuePerAtom * BigInt(atomValues.length)
-      });
-      
-      return hash;
-    } catch (error) {
-      console.error('Error creating atoms:', error);
-      throw error;
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Préparer les données pour la validation
+    // Prepare data for validation
     const atomsToCheck = [
       hackathonTitle,
       'starts_on',
@@ -146,18 +110,7 @@ const SubmitHackathon = () => {
       ...prizes.map(prize => prize.name)
     ];
 
-    // Vérifier l'existence des atomes
-    const atomResults = await Promise.all(
-      atomsToCheck.map(async (value) => ({
-        value,
-        id: await checkAtomExists(value)
-      }))
-    );
-
-    // Identifier les atomes manquants
-    const missingAtoms = atomResults.filter(result => !result.id).map(result => result.value);
-
-    // Créer les triples à valider
+    // Create triples to validate
     const triplesToValidate = [
       {
         subject: hackathonTitle,
@@ -165,84 +118,72 @@ const SubmitHackathon = () => {
         object: totalCashPrize
       },
       {
-        subject: {
-          subject: hackathonTitle,
-          predicate: 'Total Cash Prize',
-          object: totalCashPrize
-        },
+        subject: hackathonTitle,
         predicate: 'starts_on',
         object: startDate,
         displayValue: new Date(startDate).toLocaleDateString()
       },
       {
-        subject: {
-          subject: hackathonTitle,
-          predicate: 'Total Cash Prize',
-          object: totalCashPrize
-        },
+        subject: hackathonTitle,
         predicate: 'ends_on',
         object: endDate,
         displayValue: new Date(endDate).toLocaleDateString()
       },
-
       ...prizes.map(prize => ({
-        subject: prize.name,
-        predicate: 'is',
-        object: prize.amount
-      })),
-      
-      ...prizes.map(prize => {
-        if (prize.name === 'Other') {
-          // Get the names of the other prizes
-          const otherPrizeNames = prizes
-            .filter(p => p.name !== 'Other')
-            .map(p => p.name);
-
-          return {
-            subject: hackathonTitle,
-            predicate: 'is composed',
-            object: {
-              subject: prize.otherName || otherPrizeNames[0] || 'Other', // Fallback to the first prize name
-              predicate: 'is',
-              object: prize.amount
-            }
-          };
-        } else {
-          return {
-            subject: {
-              subject: hackathonTitle,
-              predicate: 'Total Cash Prize',
-              object: totalCashPrize
-            },
-            predicate: 'is composed',
-            object: {
-              subject: prize.name,
-              predicate: 'is',
-              object: prize.amount
-            }
-          };
+        subject: hackathonTitle,
+        predicate: 'has_prize',
+        object: {
+          name: prize.name,
+          amount: prize.amount
         }
-      })
+      }))
     ];
 
     setTriples(triplesToValidate);
-    setValidatedTriples(triplesToValidate);
     setShowConfirmation(true);
   };
 
   const handleConfirm = async () => {
     try {
+      setIsCreatingAtoms(true);
+      setIsCreatingTriples(false);
+
+      // First ensure authentication
       if (!authenticated) {
         await login();
-        return;
+        // Add delay after login
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (!authenticated) {
+          throw new Error('Please connect your wallet first');
+        }
       }
 
-      // 0. Vérifier PINATA_JWT
+      // Then check for wallet connection
+      if (!walletClient) {
+        console.log('Attempting to reconnect wallet...');
+        await login();
+        // Add delay after login attempt
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        if (!walletClient) {
+          throw new Error('Unable to connect to wallet. Please try again.');
+        }
+      }
+
+      // Finally verify account
+      if (!walletClient.account) {
+        throw new Error('No wallet account selected. Please select an account in your wallet.');
+      }
+
+      if (!publicClient) {
+        throw new Error('Network connection not available');
+      }
+
       if (!env.PINATA_JWT) {
         throw new Error('PINATA_JWT is not configured. Please contact the administrator.');
       }
 
-      // 1. D'abord, on stocke les données sur IPFS
+      // 1. Store data on IPFS
       const hackathonData = {
         title: hackathonTitle,
         description,
@@ -256,89 +197,55 @@ const SubmitHackathon = () => {
         }))
       };
 
-      // Convertir en JSON et stocker sur IPFS
-      const blob = new Blob([JSON.stringify(hackathonData)], { type: 'application/json' });
-      const formData = new FormData();
-      formData.append('file', blob);
-
-      const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${env.PINATA_JWT}`
-        },
-        body: formData
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to upload to IPFS. Please check your PINATA_JWT and try again.');
-      }
-
-      const ipfsResult = await response.json();
-      const ipfsHash = ipfsResult.IpfsHash;
-
-      // 2. Stocker le titre et la description sur IPFS séparément
-      const titleBlob = new Blob([hackathonTitle], { type: 'text/plain' });
-      const titleFormData = new FormData();
-      titleFormData.append('file', titleBlob);
-
-      const descBlob = new Blob([description], { type: 'text/plain' });
-      const descFormData = new FormData();
-      descFormData.append('file', descBlob);
-
-      const [titleResponse, descResponse] = await Promise.all([
-        fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${env.PINATA_JWT}`
-          },
-          body: titleFormData
-        }),
-        fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${env.PINATA_JWT}`
-          },
-          body: descFormData
-        })
+      const [ipfsResult, titleIpfs, descIpfs] = await Promise.all([
+        uploadToIPFS(hackathonData, env.PINATA_JWT),
+        uploadTextToIPFS(hackathonTitle, env.PINATA_JWT),
+        uploadTextToIPFS(description, env.PINATA_JWT)
       ]);
 
-      if (!titleResponse.ok || !descResponse.ok) {
-        throw new Error('Failed to upload title or description to IPFS');
-      }
-
-      const [titleIpfs, descIpfs] = await Promise.all([
-        titleResponse.json(),
-        descResponse.json()
-      ]);
-
-      // 3. Créer les atoms pour les données IPFS et les autres atoms nécessaires
+      // 2. Create atoms for IPFS data and other necessary atoms
       const atomsToCreate = [
         titleIpfs.IpfsHash,
         descIpfs.IpfsHash,
-        ipfsHash,
+        ipfsResult.IpfsHash,
         'starts_on',
         'ends_on',
         'has_prize',
         ...prizes.map(prize => prize.name)
       ];
 
-      // Première vérification des atomes existants
-      const existingAtomIds = await Promise.all(
-        atomsToCreate.map(value => checkAtomExists(value))
+      // Create missing atoms
+      const missingAtoms = await Promise.all(
+        atomsToCreate.map(async (value) => {
+          const exists = await checkAtomExists(value);
+          return exists ? null : value;
+        })
       );
 
-      const missingAtoms = atomsToCreate.filter((_, index) => !existingAtomIds[index]);
+      const filteredMissingAtoms = missingAtoms.filter((atom): atom is string => atom !== null);
       
-      if (missingAtoms.length > 0) {
-        console.log('Creating missing atoms:', missingAtoms);
-        const atomsHash = await createMissingAtoms(missingAtoms);
-        if (atomsHash) {
-          await publicClient?.waitForTransactionReceipt({ hash: atomsHash });
-          await new Promise(resolve => setTimeout(resolve, 2000));
+      if (filteredMissingAtoms.length > 0) {
+        const valuePerAtom = BigInt("1000000000000000"); // 0.001 ETH per atom
+        
+        try {
+          const { request } = await publicClient.simulateContract({
+            account: walletClient.account.address,
+            address: MULTIVAULT_CONTRACT_ADDRESS as Address,
+            abi: multivaultAbi,
+            functionName: 'batchCreateAtom',
+            args: [filteredMissingAtoms.map(v => toHex(v))],
+            value: valuePerAtom * BigInt(filteredMissingAtoms.length)
+          });
+
+          const hash = await walletClient.writeContract(request);
+          await publicClient.waitForTransactionReceipt({ hash });
+        } catch (error) {
+          console.error('Error creating atoms:', error);
+          throw new Error('Failed to create atoms. Please check your wallet and try again.');
         }
       }
 
-      // 4. Vérifier que tous les atomes existent maintenant
+      // Wait for atoms to be created
       let retryCount = 0;
       let allAtomsExist = false;
       let atomIds: (bigint | null)[] = [];
@@ -355,90 +262,92 @@ const SubmitHackathon = () => {
         }
       }
 
-      const [titleIpfsId, descIpfsId, dataIpfsId, startsOnId, endsOnId, hasPrizeId, ...prizeIds] = atomIds;
-
-      if (!titleIpfsId || !descIpfsId || !dataIpfsId || !startsOnId || !endsOnId || !hasPrizeId) {
+      if (atomIds.some(id => id === null)) {
         throw new Error('Failed to create or retrieve required atoms. Please try again.');
       }
 
-      // 5. Créer les triples avec des dates simplifiées
+      setIsCreatingAtoms(false);
+      setIsCreatingTriples(true);
+
+      const [titleIpfsId, descIpfsId, dataIpfsId, startsOnId, endsOnId, hasPrizeId, ...prizeIds] = atomIds;
+
+      // 3. Create triples
       const triplesToCreate = [
         {
-          subjectId: titleIpfsId,
-          predicateId: startsOnId,
+          subjectId: titleIpfsId!,
+          predicateId: startsOnId!,
           objectId: BigInt(new Date(startDate).getDate())
         },
         {
-          subjectId: titleIpfsId,
-          predicateId: endsOnId,
+          subjectId: titleIpfsId!,
+          predicateId: endsOnId!,
           objectId: BigInt(new Date(endDate).getDate())
         },
-        ...prizes.map((prize, index) => {
-          const prizeId = prizeIds[index];
-          if (!prizeId) throw new Error(`Prize ID not found for ${prize.name}`);
-          return {
-            subjectId: titleIpfsId,
-            predicateId: hasPrizeId,
-            objectId: prizeId
-          };
-        })
+        ...prizes.map((prize, index) => ({
+          subjectId: titleIpfsId!,
+          predicateId: hasPrizeId!,
+          objectId: prizeIds[index]!
+        }))
       ];
 
-      console.log('Creating triples:', triplesToCreate);
+      const valuePerTriple = BigInt("1000000000000000"); // 0.001 ETH per triple
+      
+      try {
+        const { request } = await publicClient.simulateContract({
+          account: walletClient.account.address,
+          address: MULTIVAULT_CONTRACT_ADDRESS as Address,
+          abi: multivaultAbi,
+          functionName: 'batchCreateTriple',
+          args: [
+            triplesToCreate.map(t => t.subjectId),
+            triplesToCreate.map(t => t.predicateId),
+            triplesToCreate.map(t => t.objectId)
+          ],
+          value: valuePerTriple * BigInt(triplesToCreate.length)
+        });
 
-      // 6. Créer les triples en une seule transaction
-      const valuePerTriple = BigInt("1000000000000000"); // 0.001 ETH par triple
-      const triplesHash = await writeBatchCreateTriple({
-        address: MULTIVAULT_CONTRACT_ADDRESS,
-        abi: multivaultAbi,
-        functionName: 'batchCreateTriple',
-        args: [
-          triplesToCreate.map(t => t.subjectId),
-          triplesToCreate.map(t => t.predicateId),
-          triplesToCreate.map(t => t.objectId)
-        ],
-        value: valuePerTriple * BigInt(triplesToCreate.length)
-      });
+        const hash = await walletClient.writeContract(request);
+        await publicClient.waitForTransactionReceipt({ hash });
+      } catch (error) {
+        console.error('Error creating triples:', error);
+        throw new Error('Failed to create triples. Please check your wallet and try again.');
+      }
 
-      await publicClient?.waitForTransactionReceipt({ hash: triplesHash });
+      setIsCreatingTriples(false);
       setShowConfirmation(false);
       navigate('/app/hackathons');
     } catch (error) {
+      setIsCreatingAtoms(false);
+      setIsCreatingTriples(false);
       console.error('Transaction error:', error);
-      alert(error instanceof Error ? error.message : 'Transaction failed. Please try again.');
+      
+      // Update error messages
+      let errorMessage = 'Transaction failed. Please try again.';
+      if (error instanceof Error) {
+        if (error.message.includes('wallet')) {
+          errorMessage = `Wallet Error: ${error.message}. Please ensure your wallet is connected and try again.`;
+        } else if (error.message.includes('user rejected')) {
+          errorMessage = 'Transaction was rejected. Please try again.';
+        } else if (error.message.includes('network')) {
+          errorMessage = 'Network Error: Please check your connection and try again.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      alert(errorMessage);
     }
   };
 
   const addPrize = () => {
     const prizeOrder = ['Second Place', 'Third Place', 'Other'];
     const nextPrize = prizeOrder[prizes.length - 1] || 'Other';
-    setPrizes([...prizes, { name: nextPrize, amount: 0 }]);
+    setPrizes([...prizes, { name: nextPrize, amount: 0, percent: 0 }]);
   };
 
   const removePrize = (index: number) => {
     const newPrizes = prizes.filter((_, i) => i !== index);
     setPrizes(newPrizes);
-  };
-
-  let totalPrizeAmount = prizes.reduce((total, prize) => total + (prize.amount || 0), 0);
-
-  const today = new Date();
-  const oneWeekFromNow = new Date(today);
-  oneWeekFromNow.setDate(today.getDate() + 7);
-  const tomorrow = new Date();
-  tomorrow.setDate(today.getDate() + 1);
-
-  const prizeOptions = [
-    { value: 'First Place', label: 'First Place' },
-    { value: 'Second Place', label: 'Second Place' },
-    { value: 'Third Place', label: 'Third Place' },
-    { value: 'Other', label: 'Other' },
-  ];
-
-  // Fonction pour obtenir les options de prix disponibles
-  const getAvailablePrizeOptions = () => {
-    const usedPrizes = prizes.map(prize => prize.name);
-    return prizeOptions.filter(option => option.value === 'other' || !usedPrizes.includes(option.value));
   };
 
   const updatePrize = (index: number, updatedPrize: Prize) => {
@@ -465,124 +374,62 @@ const SubmitHackathon = () => {
       endDate !== '' &&
       totalCashPrize > 0;
 
-    const isTotalCorrect = totalPrizeAmount === totalCashPrize;
+    const totalPrizeAmount = prizes.reduce((total, prize) => total + (prize.amount || 0), 0);
+    // Allow a small difference due to rounding
+    const isTotalCorrect = Math.abs(totalPrizeAmount - totalCashPrize) <= 1;
 
     return isAllFieldsFilled && isTotalCorrect;
   };
 
-  // Ajoutez cette fonction helper
-  const formatTriplesForDisplay = (triples: any[]) => {
-    return triples.map(triple => ({
-      subject: triple.subject,
-      predicate: triple.predicate,
-      object: triple.displayValue || triple.object
-    }));
-  };
-
   return (
     <>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <h1 className="text-xl font-bold">Submit a New Hackathon</h1>
-        <Input
-          startAdornment="Partner Name"
-          value={partnerName}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPartnerName(e.target.value)}
-          required
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <h1 className="text-xl font-bold">Submit a New Hackathon</h1>
+        
+        <BasicInfoForm
+          partnerName={partnerName}
+          hackathonTitle={hackathonTitle}
+          description={description}
+          onPartnerNameChange={setPartnerName}
+          onTitleChange={setHackathonTitle}
+          onDescriptionChange={setDescription}
         />
-        <Input
-          startAdornment="Hackathon Title"
-          value={hackathonTitle}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHackathonTitle(e.target.value)}
-          required
+
+        <DateSelection
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={setStartDate}
+          onEndDateChange={setEndDate}
         />
-        <div className="flex flex-col">
-          <label className="mb-1">Description</label>
-          <Textarea
-            value={description}
-            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
-            placeholder="Enter a brief description of the hackathon"
-            required
-          />
-        </div>
-        <Input
-          type="date"
-          startAdornment="Start Date"
-          value={startDate}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)}
-          required
-          min={tomorrow.toISOString().split("T")[0]}
+
+        <PrizeSection
+          totalCashPrize={totalCashPrize}
+          prizes={prizes}
+          onTotalCashPrizeChange={setTotalCashPrize}
+          onPrizesChange={setPrizes}
         />
-        <Input
-          type="date"
-          startAdornment="End Date"
-          value={endDate}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)}
-          required
-          min={startDate ? new Date(new Date(startDate).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0] : ''}
-          disabled={!startDate || new Date(startDate) < today}
-        />
-        <Input
-          startAdornment="Total Cash Prize"
-          type="number"
-          value={totalCashPrize.toString()}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleTotalCashPrizeChange(parseInt(e.target.value))}
-          placeholder="Enter total cash prize amount"
-          required
-          endAdornment="$"
-        />
-        {prizes.map((prize, index) => (
-          <PrizeDistribution
-            key={index}
-            prize={prize}
-            index={index}
-            removePrize={removePrize}
-            updatePrize={updatePrize}
-            availableOptions={getAvailablePrizeOptions()}
-            totalCashPrize={totalCashPrize || 0}
-            prizes={prizes}
-            prizesNumber={prizes.length}
-          />
-        ))}
-        <div className="text-red-500">
-          {totalPrizeAmount > totalCashPrize && (
-            <p>Total prize amounts exceed the total cash prize!</p>
-          )}
-        </div>
-        <div className="flex justify-between">
-          <Button
-            variant={ButtonVariant.successOutline}
-            size={ButtonSize.md}
-            type="button"
-            onClick={addPrize}
-            className="px-4 py-2"
-          >
-            Add Prize
-          </Button>
-          <Button
-            variant={ButtonVariant.accentOutline}
-            size={ButtonSize.md}
-            type="submit"
-            disabled={!isFormValid()}
-            className="px-4 py-2"
-          >
-            Submit
-          </Button>
-        </div>
-      </form>
-      
-      <Dialog open={showConfirmation} onOpenChange={setShowConfirmation}>
-        <DialogContent className="max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Confirm Triples Creation</DialogTitle>
-          </DialogHeader>
-          <div className="overflow-x-auto">
-            <pre className="whitespace-pre-wrap break-all">
-              {JSON.stringify(formatTriplesForDisplay(triples), null, 2)}
-            </pre>
-          </div>
-          <Button onClick={handleConfirm}>Confirm & Sign</Button>
-        </DialogContent>
-      </Dialog>
+
+        <div className="flex justify-end">
+        <Button
+          variant={ButtonVariant.accentOutline}
+          size={ButtonSize.md}
+          type="submit"
+          disabled={!isFormValid()}
+          className="px-4 py-2"
+        >
+          Submit
+        </Button>
+      </div>
+    </form>
+
+      <ConfirmationDialog
+        open={showConfirmation}
+        onOpenChange={setShowConfirmation}
+        triples={triples}
+        onConfirm={handleConfirm}
+        isLoading={isCreatingAtoms || isCreatingTriples}
+        loadingText={isCreatingAtoms ? 'Creating Atoms...' : isCreatingTriples ? 'Creating Triples...' : undefined}
+      />
     </>
   );
 };

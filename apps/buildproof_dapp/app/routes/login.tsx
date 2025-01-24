@@ -9,6 +9,7 @@ import { json, type ActionFunctionArgs } from '@remix-run/node'
 import { Link, useSubmit } from '@remix-run/react'
 import { PATHS } from 'app/consts'
 
+
 export async function action({ request }: ActionFunctionArgs) {
   logger('[Action] Entering login action')
   const url = new URL(request.url)
