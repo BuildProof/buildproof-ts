@@ -2,6 +2,17 @@ import { ProjectSubmission } from '../../components/project-submission/project-s
 import { usePrivy } from '@privy-io/react-auth'
 import { useNavigate } from '@remix-run/react'
 import { useEffect } from 'react'
+import { json, LoaderFunctionArgs } from '@remix-run/node'
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  const pinataJwt = process.env.PINATA_JWT_KEY
+
+  return json({
+    env: {
+      PINATA_JWT: pinataJwt || null
+    }
+  })
+}
 
 export default function SubmitProject() {
   const { authenticated, ready } = usePrivy()

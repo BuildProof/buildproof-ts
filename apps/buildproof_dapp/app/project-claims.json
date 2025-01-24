@@ -1,0 +1,28 @@
+{
+  "teams": [
+    {
+      "teamName": "Team Name",
+      "worksOn": {
+        "project": {
+          "title": "Submitted Project",
+          "image": "project_image_url",
+          "description": "Project description",
+          "submissionLink": "submission_link_url",
+          "bestFor": {
+            "hackathon": "Hackathon Name"
+          }
+        }
+      },
+      "isComposedOf": [
+        {
+          "memberName": "Member 1 Name",
+          "hasRole": "Role 1"
+        },
+        {
+          "memberName": "Member 2 Name",
+          "hasRole": "Role 2"
+        }
+      ]
+    }
+  ]
+}

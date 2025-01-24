@@ -15,6 +15,14 @@ import {
   Textarea,
   Separator,
 } from '@0xintuition/buildproof_ui';
+import { useBatchCreateTriple } from '../../lib/hooks/useBatchCreateTriple';
+import { useBatchCreateAtom } from '../../lib/hooks/useBatchCreateAtom';
+import { usePublicClient } from 'wagmi';
+import { MULTIVAULT_CONTRACT_ADDRESS } from 'app/consts';
+import { multivaultAbi } from '@lib/abis/multivault';
+import { keccak256, toHex } from 'viem';
+import { hashDataToIPFS } from '../../utils/ipfs-utils.ts';
+import { useLoaderData } from '@remix-run/react';
 
 // Predefined roles for team members
 const TEAM_ROLES = [
@@ -53,6 +61,50 @@ const INITIAL_FORM_STATE: ProjectSubmissionForm = {
 export function ProjectSubmission() {
   const [formData, setFormData] = useState<ProjectSubmissionForm>(INITIAL_FORM_STATE);
   const [errors, setErrors] = useState<Partial<Record<keyof ProjectSubmissionForm, string>>>({});
+  const [triples, setTriples] = useState<any[]>([]);
+  const publicClient = usePublicClient();
+  const { writeContractAsync: writeBatchCreateTriple } = useBatchCreateTriple();
+  const { writeContractAsync: writeBatchCreateAtom } = useBatchCreateAtom();
+  const { env } = useLoaderData<{ env: { PINATA_JWT: string | null } }>();
+
+  // Check if an atom exists
+  const checkAtomExists = async (value: string): Promise<bigint | null> => {
+    if (!publicClient) return null;
+
+    try {
+      const atomHash = keccak256(toHex(value));
+      const atomId = await publicClient.readContract({
+        address: MULTIVAULT_CONTRACT_ADDRESS,
+        abi: multivaultAbi,
+        functionName: 'atomsByHash',
+        args: [atomHash]
+      });
+      return BigInt(atomId as number);
+    } catch (error) {
+      return null;
+    }
+  };
+
+  // Create missing atoms
+  const createMissingAtoms = async (atomValues: string[]) => {
+    if (atomValues.length === 0) return null;
+
+    try {
+      const valuePerAtom = BigInt("1000000000000000"); // 0.001 ETH par atome
+      const hash = await writeBatchCreateAtom({
+        address: MULTIVAULT_CONTRACT_ADDRESS,
+        abi: multivaultAbi,
+        functionName: 'batchCreateAtom',
+        args: [atomValues.map(v => toHex(v))],
+        value: valuePerAtom * BigInt(atomValues.length)
+      });
+
+      return hash;
+    } catch (error) {
+      console.error('Error creating atoms:', error);
+      throw error;
+    }
+  };
 
   const validateUrl = (url: string) => {
     try {
@@ -106,11 +158,135 @@ export function ProjectSubmission() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (validateForm()) {
-      // Here you would typically submit the form data to your backend
-      console.log('Form submitted:', formData);
+
+    try {
+      if (!env.PINATA_JWT) {
+        throw new Error('PINATA_JWT is not configured. Please contact the administrator.');
+      }
+
+      // Store project data in IPFS
+      const projectData = {
+        teamName: formData.teamName,
+        projectName: formData.projectName,
+        projectDescription: formData.projectDescription,
+        submissionLink: formData.submissionLink,
+        teamMembers: formData.teamMembers
+      };
+
+      // Hash data to IPFS
+      const { value: nameValue, ipfsHash: nameIpfsHash } = await hashDataToIPFS(formData.projectName, env.PINATA_JWT);
+      const { value: descValue, ipfsHash: descIpfsHash } = await hashDataToIPFS(formData.projectDescription, env.PINATA_JWT);
+      const { ipfsHash: dataIpfsHash } = await hashDataToIPFS(projectData, env.PINATA_JWT);
+
+      // Prepare atoms to check
+      const atomsToCreate = [
+        nameValue,
+        nameIpfsHash,
+        descValue,
+        descIpfsHash,
+        dataIpfsHash,
+        formData.teamName,
+        'submitted_by',
+        'has_member',
+        'has_role',
+        ...formData.teamMembers.map(member => member.name)
+      ];
+
+      // Check existing atoms
+      const existingAtomIds = await Promise.all(
+        atomsToCreate.map(value => checkAtomExists(value))
+      );
+
+      const missingAtoms = atomsToCreate.filter((_, index) => !existingAtomIds[index]);
+
+      if (missingAtoms.length > 0) {
+        console.log('Creating missing atoms:', missingAtoms);
+        const atomsHash = await createMissingAtoms(missingAtoms);
+        if (atomsHash) {
+          await publicClient?.waitForTransactionReceipt({ hash: atomsHash });
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
+      // Verify all atoms exist
+      let retryCount = 0;
+      let allAtomsExist = false;
+      let atomIds: (bigint | null)[] = [];
+
+      while (retryCount < 3 && !allAtomsExist) {
+        atomIds = await Promise.all(
+          atomsToCreate.map(value => checkAtomExists(value))
+        );
+
+        allAtomsExist = atomIds.every(id => id !== null);
+        if (!allAtomsExist) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          retryCount++;
+        }
+      }
+
+      const [
+        projectNameId,
+        projectNameIpfsId,
+        projectDescId,
+        projectDescIpfsId,
+        projectDataIpfsId,
+        teamNameId,
+        submittedById,
+        hasMemberId,
+        ...memberIds
+      ] = atomIds;
+
+      if (!projectNameId || !teamNameId || !submittedById || !hasMemberId) {
+        throw new Error('Failed to create or retrieve required atoms. Please try again.');
+      }
+
+      // Create triples
+      const triplesToCreate = [
+        // Project submitted by team
+        {
+          subjectId: projectNameId,
+          predicateId: submittedById,
+          objectId: teamNameId
+        },
+        // Team members
+        ...formData.teamMembers.map((member, index) => {
+          const memberId = memberIds[index];
+          if (!memberId) throw new Error(`Member ID not found for ${member.name}`);
+          return {
+            subjectId: projectNameId,
+            predicateId: hasMemberId,
+            objectId: memberId
+          };
+        })
+      ];
+
+      // Create triples in a single transaction
+      const valuePerTriple = BigInt("1000000000000000"); // 0.001 ETH per triple
+
+      const triplesHash = await writeBatchCreateTriple({
+        address: MULTIVAULT_CONTRACT_ADDRESS,
+        abi: multivaultAbi,
+        functionName: 'batchCreateTriple',
+        args: [
+          triplesToCreate.map(t => t.subjectId),
+          triplesToCreate.map(t => t.predicateId),
+          triplesToCreate.map(t => t.objectId)
+        ],
+        value: valuePerTriple * BigInt(triplesToCreate.length)
+      });
+
+      await publicClient?.waitForTransactionReceipt({ hash: triplesHash });
+
+      // Reset form or redirect
+      // You can add navigation here if needed
+      // navigate('/success-page');
+
+    } catch (error) {
+      console.error('Transaction error:', error);
+      alert(error instanceof Error ? error.message : 'Transaction failed. Please try again.');
     }
   };
 
@@ -285,7 +461,7 @@ export function ProjectSubmission() {
               <Input
                 value={formData.submissionLink}
                 onChange={e => setFormData(prev => ({ ...prev, submissionLink: e.target.value }))}
-                placeholder="https://..."
+                placeholder="Enter the project submission link"
                 aria-invalid={!!errors.submissionLink}
                 aria-errormessage={errors.submissionLink}
               />
@@ -298,10 +474,16 @@ export function ProjectSubmission() {
           </div>
         </div>
 
-        <Button type="submit" variant="primary" className="w-full">
-          Submit Project
-        </Button>
+        <div className="flex justify-center">
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={Object.keys(errors).length > 0} // Disable if there are any validation errors
+          >
+            Submit Project
+          </Button>
+        </div>
       </form>
     </div>
   );
-} 
+}
