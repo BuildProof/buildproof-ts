@@ -35,7 +35,7 @@ interface VotingPageProps {
 export const VotingPage = ({ triplesData, userAddress }: VotingPageProps) => {
     const [selectedTab, setSelectedTab] = useState('voting');
     const [currentPage, setCurrentPage] = useState(1);
-    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [rowsPerPage, setRowsPerPage] = useState(50);
 
     // État pour les valeurs des sliders
     const [sliderValues, setSliderValues] = useState<{ [key: string]: number }>({});
