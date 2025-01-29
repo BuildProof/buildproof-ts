@@ -14,9 +14,7 @@ const SubmitHackathon = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [totalCashPrize, setTotalCashPrize] = useState(0);
-  const [prizes, setPrizes] = useState<Prize[]>([
-    { name: 'First Place', amount: 0, percent: 0 }
-  ]);
+  const [prizes, setPrizes] = useState<Prize[]>([{ name: 'First Place', amount: totalCashPrize, percent: 100 }]);
 
   useEffect(() => {
     if (ready && !authenticated) {
@@ -49,6 +47,10 @@ const SubmitHackathon = () => {
   };
 
   let totalPrizeAmount = prizes.reduce((total, prize) => total + (prize.amount || 0), 0);
+
+  useEffect(() => {
+    totalPrizeAmount = prizes.reduce((total, prize) => total + (prize.amount || 0), 0)
+  }, [prizes]);
 
   const today = new Date();
   const oneWeekFromNow = new Date(today);
@@ -106,20 +108,20 @@ const SubmitHackathon = () => {
       <Input
         startAdornment="Partner Name"
         value={partnerName}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPartnerName(e.target.value)}
+        onChange={(e) => setPartnerName(e.target.value)}
         required
       />
       <Input
         startAdornment="Hackathon Title"
         value={hackathonTitle}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHackathonTitle(e.target.value)}
+        onChange={(e) => setHackathonTitle(e.target.value)}
         required
       />
       <div className="flex flex-col">
         <label className="mb-1">Description</label>
         <Textarea
           value={description}
-          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
+          onChange={(e) => setDescription(e.target.value)}
           placeholder="Enter a brief description of the hackathon"
           required
         />
@@ -128,7 +130,7 @@ const SubmitHackathon = () => {
         type="date"
         startAdornment="Start Date"
         value={startDate}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)}
+        onChange={(e) => setStartDate(e.target.value)}
         required
         min={tomorrow.toISOString().split("T")[0]}
       />
@@ -136,7 +138,7 @@ const SubmitHackathon = () => {
         type="date"
         startAdornment="End Date"
         value={endDate}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)}
+        onChange={(e) => setEndDate(e.target.value)}
         required
         min={startDate ? new Date(new Date(startDate).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0] : ''}
         disabled={!startDate || new Date(startDate) < today}
@@ -145,7 +147,7 @@ const SubmitHackathon = () => {
         startAdornment="Total Cash Prize"
         type="number"
         value={totalCashPrize}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleTotalCashPrizeChange(parseInt(e.target.value))}
+        onChange={(e) => setTotalCashPrize(parseInt(e.target.value))}
         placeholder="Enter total cash prize amount"
         required
         endAdornment="$"
@@ -159,8 +161,6 @@ const SubmitHackathon = () => {
           updatePrize={updatePrize}
           availableOptions={getAvailablePrizeOptions()}
           totalCashPrize={totalCashPrize || 0}
-          prizes={prizes}
-          prizesNumber={prizes.length}
         />
       ))}
       <div className="text-red-500">
