@@ -18,11 +18,6 @@ export function PrizeSection({
   onTotalCashPrizeChange,
   onPrizesChange,
 }: PrizeSectionProps) {
-  const addPrize = () => {
-    const prizeOrder = ['Second Place', 'Third Place', 'Other']
-    const nextPrize = prizeOrder[prizes.length - 1] || 'Other'
-    onPrizesChange([...prizes, { name: nextPrize, amount: 0, percent: 0 }])
-  }
 
   const removePrize = (index: number) => {
     const newPrizes = prizes.filter((_, i) => i !== index)
@@ -100,16 +95,6 @@ export function PrizeSection({
             : `Remaining to distribute: $${difference}`}
         </div>
       )}
-
-      <Button
-        variant={ButtonVariant.successOutline}
-        size={ButtonSize.md}
-        type="button"
-        onClick={addPrize}
-        className="px-4 py-2"
-      >
-        Add Prize
-      </Button>
     </div>
   )
 }
