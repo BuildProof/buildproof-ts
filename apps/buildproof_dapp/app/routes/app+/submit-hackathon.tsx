@@ -315,7 +315,7 @@ const SubmitHackathon = () => {
 
       setIsCreatingTriples(false);
       setShowConfirmation(false);
-      navigate('/app/hackathons');
+      window.location.href = 'http://127.0.0.1:8080/app';
     } catch (error) {
       setIsCreatingAtoms(false);
       setIsCreatingTriples(false);
@@ -337,32 +337,6 @@ const SubmitHackathon = () => {
       
       alert(errorMessage);
     }
-  };
-
-  const addPrize = () => {
-    const prizeOrder = ['Second Place', 'Third Place', 'Other'];
-    const nextPrize = prizeOrder[prizes.length - 1] || 'Other';
-    setPrizes([...prizes, { name: nextPrize, amount: 0, percent: 0 }]);
-  };
-
-  const removePrize = (index: number) => {
-    const newPrizes = prizes.filter((_, i) => i !== index);
-    setPrizes(newPrizes);
-  };
-
-  const updatePrize = (index: number, updatedPrize: Prize) => {
-    const newPrizes = [...prizes];
-    newPrizes[index] = updatedPrize;
-    setPrizes(newPrizes);
-  };
-
-  const handleTotalCashPrizeChange = (value: number) => {
-    setTotalCashPrize(value);
-    const updatedPrizes = prizes.map(prize => ({
-      ...prize,
-      percent: value > 0 ? (prize.amount / value) * 100 : 0
-    }));
-    setPrizes(updatedPrizes);
   };
 
   const isFormValid = () => {
