@@ -1,6 +1,6 @@
 {
   "name": "@0xintuition/protocol",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Protocol",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -39,7 +39,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "viem": "2.21.8"
+    "viem": "2.22.6"
   },
   "devDependencies": {
     "@viem/anvil": "^0.0.10",
