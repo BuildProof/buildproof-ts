@@ -72,32 +72,48 @@ interface TripleWithVaults {
     counter_vault: VaultWithSharePrice;
 }
 
+type UserStakesValues = {
+    percentage: number;
+    vaultValue: number;
+    counterVaultValue: number;
+};
+
+type UserStakes = {
+    [key: number]: {
+        id: number;
+        initial: UserStakesValues;
+        current: UserStakesValues;
+    };
+};
+
+
+
 export const VotingPage = ({ triplesData, userAddress, onSearch, currentSearch }: VotingPageProps) => {
     const [selectedTab, setSelectedTab] = useState('voting');
     const [currentPage, setCurrentPage] = useState(1);
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [currency, setCurrency] = useState<SupportedCurrency>('ETH');
-    
+
     // Calculate total existing positions and initialize states
     const [ethAmount, setEthAmount] = useState(() => {
         if (!triplesData?.triples) return '0.001';
-        
+
         // Calculer le total des positions existantes en ETH
         const totalPositions = triplesData.triples.reduce((total, triple) => {
             const typedTriple = triple as unknown as TripleWithVaults;
             const userVaultPosition = typedTriple.vault?.positions?.length ? typedTriple.vault.positions[0] : undefined;
             const userCounterVaultPosition = typedTriple.counter_vault?.positions?.length ? typedTriple.counter_vault.positions[0] : undefined;
-            
+
             // Calculer la valeur en ETH pour la position FOR
             const vaultValue = userVaultPosition && typedTriple.vault?.current_share_price
                 ? Number(formatUnits(BigInt(calculateStakeValue(userVaultPosition.shares, typedTriple.vault.current_share_price)), 18))
                 : 0;
-                
+
             // Calculer la valeur en ETH pour la position AGAINST
             const counterVaultValue = userCounterVaultPosition && typedTriple.counter_vault?.current_share_price
                 ? Number(formatUnits(BigInt(calculateStakeValue(userCounterVaultPosition.shares, typedTriple.counter_vault.current_share_price)), 18))
                 : 0;
-                
+
             return total + vaultValue + counterVaultValue;
         }, 0);
 
@@ -105,52 +121,84 @@ export const VotingPage = ({ triplesData, userAddress, onSearch, currentSearch }
     });
 
     // Calculate initial slider values
-    const initialSliderValues = (() => {
+    const initialUserStakesValues: UserStakes = (() => {
         if (!triplesData?.triples) return {};
-        
+
         const totalEth = Number(ethAmount);
         if (totalEth === 0) return {};
 
-        return triplesData.triples.reduce((values, triple) => {
+
+
+        let userStakes = triplesData.triples.map(triple => {
+
+            const tripleId = parseInt(triple.id);
+
             const typedTriple = triple as unknown as TripleWithVaults;
             const userVaultPosition = typedTriple.vault?.positions?.[0];
             const userCounterVaultPosition = typedTriple.counter_vault?.positions?.[0];
-            
+
             // Calculer la valeur en ETH pour la position FOR
             const vaultValue = userVaultPosition && typedTriple.vault?.current_share_price
                 ? Number(formatUnits(BigInt(calculateStakeValue(userVaultPosition.shares, typedTriple.vault.current_share_price)), 18))
                 : 0;
-                
+
             // Calculer la valeur en ETH pour la position AGAINST
             const counterVaultValue = userCounterVaultPosition && typedTriple.counter_vault?.current_share_price
                 ? Number(formatUnits(BigInt(calculateStakeValue(userCounterVaultPosition.shares, typedTriple.counter_vault.current_share_price)), 18))
                 : 0;
 
-            if (vaultValue > 0) {
-                values[typedTriple.id] = (vaultValue / totalEth) * 100;
-            } else if (counterVaultValue > 0) {
-                values[typedTriple.id] = -(counterVaultValue / totalEth) * 100;
+            let percentage = 0;
+
+            percentage = vaultValue > 0 ? (vaultValue / totalEth) * 100 : -(counterVaultValue / totalEth) * 100;
+
+
+            let initialValue: UserStakes = {
+                [tripleId]: {
+                    id: tripleId,
+                    initial: {
+                        vaultValue,
+                        counterVaultValue,
+                        percentage
+                    },
+                    current: {
+                        vaultValue,
+                        counterVaultValue,
+                        percentage
+                    }
+                }
+
             }
-            
-            return values;
-        }, {} as { [key: string]: number });
+
+            return initialValue;
+        },);
+
+        return userStakes
     })();
 
-    const [sliderValues, setSliderValues] = useState(initialSliderValues);
-    const [debouncedSliderValues, setDebouncedSliderValues] = useState(initialSliderValues);
+    const [userStakes, setuserStakes] = useState(initialUserStakesValues);
+    const [sliderValues, setSliderValues] = useState(Object.values(initialUserStakesValues).reduce((values, userStake) => {
+
+        let claimId = Object.keys(userStake)[0]
+        values[claimId] = userStake[claimId].initial.percentage
+
+        return values;
+    }, {} as { [key: string]: number })
+    )
+
+    const [debouncedSliderValues, setDebouncedSliderValues] = useState(sliderValues);
 
     const [displayAmount, setDisplayAmount] = useState(ethAmount);
     const [ethPrice, setEthPrice] = useState('0');
 
     // État pour les valeurs des sliders
     const [sortedItemIds, setSortedItemIds] = useState<string[]>([]);
-    
+
     // Create a subject for slider changes
     const sliderSubject = useRef(new Subject<{ id: string; value: number }>());
 
     // Fetch ETH price
     const ethPriceFetcher = useFetcher<EthPriceResponse>();
-    
+
     useEffect(() => {
         // Initial fetch only
         ethPriceFetcher.load('/resources/eth-price');
@@ -165,7 +213,7 @@ export const VotingPage = ({ triplesData, userAddress, onSearch, currentSearch }
         if (!value) return '0';
         if (fromCurrency === toCurrency) return value;
         const numValue = Number(value);
-        
+
         if (fromCurrency === 'ETH' && toCurrency === '$') {
             const result = (numValue * Number(ethPrice));
             return isNaN(result) ? '0' : result.toString();
@@ -178,14 +226,14 @@ export const VotingPage = ({ triplesData, userAddress, onSearch, currentSearch }
     // Transform the GraphQL data into our VoteItem format
     const data: VoteItem[] = useMemo(() => {
         if (!triplesData?.triples) return [];
-        
+
         let filteredTriples = triplesData.triples;
 
         return filteredTriples.map((triple: any) => {
             const typedTriple = triple as unknown as TripleWithVaults;
             const userVaultPosition = typedTriple.vault?.positions?.[0];
             const userCounterVaultPosition = typedTriple.counter_vault?.positions?.[0];
-            
+
             const totalShares = (Number(typedTriple.vault?.total_shares ?? 0) + Number(typedTriple.counter_vault?.total_shares ?? 0)).toString();
             const vaultShares = typedTriple.vault?.total_shares ?? '0';
             const counterVaultShares = typedTriple.counter_vault?.total_shares ?? '0';
@@ -198,7 +246,7 @@ export const VotingPage = ({ triplesData, userAddress, onSearch, currentSearch }
             let positionDirection;
             let userPosition;
             let sliderInitialValue = 0;
-            
+
             if (userCounterVaultShares && BigInt(userCounterVaultShares) > 0n) {
                 positionDirection = ClaimPosition.claimAgainst;
                 userPosition = userCounterVaultShares;
@@ -243,7 +291,7 @@ export const VotingPage = ({ triplesData, userAddress, onSearch, currentSearch }
     // Set up the subscription when the component mounts
     useEffect(() => {
         const subscription = sliderSubject.current.pipe(
-            distinctUntilChanged((prev, curr) => 
+            distinctUntilChanged((prev, curr) =>
                 prev.id === curr.id && prev.value === curr.value
             )
         ).subscribe(({ id, value }) => {
@@ -294,7 +342,7 @@ export const VotingPage = ({ triplesData, userAddress, onSearch, currentSearch }
     // Calculate minimum amount from user positions
     const minimumAmount = useMemo(() => {
         if (!triplesData?.triples) return 0;
-        
+
         return triplesData.triples.reduce((total, triple) => {
             const typedTriple = triple as unknown as TripleWithVaults;
             const userVaultPosition = typedTriple.vault?.positions?.[0];
@@ -309,7 +357,7 @@ export const VotingPage = ({ triplesData, userAddress, onSearch, currentSearch }
     const handleAmountChange = (value: string) => {
         const newAmount = currency === 'ETH' ? value : convertValue(value, '$', 'ETH');
         const newAmountNum = Number(newAmount);
-        
+
         // Don't allow amount below minimum
         if (newAmountNum < minimumAmount) {
             const minAmountStr = minimumAmount.toString();
@@ -324,7 +372,7 @@ export const VotingPage = ({ triplesData, userAddress, onSearch, currentSearch }
         }
 
         const oldAmount = ethAmount;
-        
+
         // Update the amounts
         if (currency === 'ETH') {
             setEthAmount(value);
@@ -372,6 +420,7 @@ export const VotingPage = ({ triplesData, userAddress, onSearch, currentSearch }
 
         try {
             // Calculer le montant total initial
+            // TODO: create state for initial total
             const initialTotal = triplesData.triples.reduce((total, triple) => {
                 const typedTriple = triple as unknown as TripleWithVaults;
                 const userVaultPosition = typedTriple.vault?.positions?.[0];
@@ -403,10 +452,10 @@ export const VotingPage = ({ triplesData, userAddress, onSearch, currentSearch }
                 const typedTriple = triple as unknown as TripleWithVaults;
                 const userVaultPosition = typedTriple.vault?.positions?.[0];
                 const userCounterVaultPosition = typedTriple.counter_vault?.positions?.[0];
-                
+
                 const sliderValue = sliderValues[typedTriple.id] || 0;
                 const truncatedPercentage = Math.floor(Math.abs(sliderValue));
-                
+
                 // Calculer le pourcentage initial de ce claim
                 const vaultAmount = userVaultPosition ? Number(formatUnits(BigInt(userVaultPosition.shares), 18)) : 0;
                 const counterVaultAmount = userCounterVaultPosition ? Number(formatUnits(BigInt(userCounterVaultPosition.shares), 18)) : 0;
