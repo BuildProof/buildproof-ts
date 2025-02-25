@@ -5,6 +5,7 @@ import { hashDataToIPFS } from '@lib/utils/ipfs-utils'
 import { json, LoaderFunctionArgs } from '@remix-run/node'
 import { useLoaderData, useNavigate } from '@remix-run/react'
 import {
+  IpfsAtomInput,
   useAtomCreation,
   type IpfsAtom,
 } from '@routes/app+/submit-hackathon/hooks/useAtomCreation'
@@ -12,7 +13,6 @@ import { useHackathonForm } from '@routes/app+/submit-hackathon/hooks/useHackath
 import { useIPFSStorage } from '@routes/app+/submit-hackathon/hooks/useIPFSStorage'
 import { usePrizeDistribution } from '@routes/app+/submit-hackathon/hooks/usePrizeDistribution'
 import { useTripleCreation } from '@routes/app+/submit-hackathon/hooks/useTripleCreation'
-import { DEFAULT_IMAGE } from '@routes/app+/submit-hackathon/utils/constants'
 import type {
   Domain,
   Triple,
@@ -31,7 +31,7 @@ export type LoaderData = {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const pinataJwt = process.env.PINATA_JWT_KEY
+  const pinataJwt = import.meta.env.Vite_PINATA_JWT_KEY
   return json<LoaderData>({
     env: {
       PINATA_JWT: pinataJwt || null,
@@ -60,7 +60,7 @@ const SubmitHackathon = () => {
   const { prizes, totalPrizeAmount, addPrize, removePrize, updatePrize } =
     usePrizeDistribution(formState.totalCashPrize)
 
-  const { storeHackathonData } = useIPFSStorage()
+  const  storeHackathonData  = useIPFSStorage()
   const { createAtomMapping, ensureAtomsExist } = useAtomCreation()
   const { createTriples, writeBatchCreateTriple } = useTripleCreation()
 
@@ -105,11 +105,6 @@ const SubmitHackathon = () => {
     e.preventDefault()
 
     try {
-      const { hackathonHash, atomListHash } = await storeHackathonData(
-        formState.hackathonTitle,
-        formState.description,
-      )
-
       // Créer les triples d'affichage pour la confirmation
       const displayTriples: Triple[] = [
         {
@@ -161,147 +156,82 @@ const SubmitHackathon = () => {
 
     setIsSubmitting(true)
     try {
-      if (!env.PINATA_JWT) {
-        throw new Error('PINATA_JWT is not configured')
-      }
-
-      const pinataJwt = env.PINATA_JWT as string
-
       // Créer tous les atomes nécessaires avec hashDataToIPFS
-      const hackathonData: IpfsAtom = {
-        '@context': 'https://schema.org/',
-        '@type': 'Thing',
+      const hackathonData: IpfsAtomInput = {
         name: formState.hackathonTitle,
         description: formState.description,
-        image: formState.image || DEFAULT_IMAGE,
       }
+      formState.image ? hackathonData.image = formState.image : ''
 
       // Créer tous les atomes et récupérer leurs hash IPFS
-      const atomsToCreate = await Promise.all([
+      const atomstoCreate = await Promise.all([
         // Hackathon
-        hashDataToIPFS(hackathonData, pinataJwt).then((result) => ({
-          ipfsHash: result.ipfsHash,
+        storeHackathonData(hackathonData).then((ipfsHash) => ({
+          ipfsHash: ipfsHash,
           role: 'hackathon',
         })),
         // Starts on (predicate)
-        hashDataToIPFS(
-          {
-            '@context': 'https://schema.org/',
-            '@type': 'Thing',
-            name: 'starts_on',
-          },
-          pinataJwt,
-        ).then((result) => ({
-          ipfsHash: result.ipfsHash,
+        storeHackathonData({name: "starts_on"}).then((ipfsHash) => ({
+          ipfsHash: ipfsHash,
           role: 'starts_on',
         })),
         // Start date (value)
-        hashDataToIPFS(
-          {
-            '@context': 'https://schema.org/',
-            '@type': 'Thing',
-            name: new Date(formState.startDate).toLocaleDateString(),
-          },
-          pinataJwt,
-        ).then((result) => ({
-          ipfsHash: result.ipfsHash,
+        storeHackathonData({name: new Date(formState.startDate).toLocaleDateString()}).then((ipfsHash) => ({
+          ipfsHash: ipfsHash,
           role: 'starts_on_date',
         })),
         // Ends on (predicate)
-        hashDataToIPFS(
-          {
-            '@context': 'https://schema.org/',
-            '@type': 'Thing',
-            name: 'ends_on',
-          },
-          pinataJwt,
-        ).then((result) => ({
-          ipfsHash: result.ipfsHash,
+        storeHackathonData({name: "ends_on"}).then((ipfsHash) => ({
+          ipfsHash: ipfsHash,
           role: 'ends_on',
         })),
         // End date (value)
-        hashDataToIPFS(
-          {
-            '@context': 'https://schema.org/',
-            '@type': 'Thing',
-            name: new Date(formState.endDate).toLocaleDateString(),
-          },
-          pinataJwt,
-        ).then((result) => ({
-          ipfsHash: result.ipfsHash,
+        storeHackathonData({name: new Date(formState.endDate).toLocaleDateString()}).then((ipfsHash) => ({
+          ipfsHash: ipfsHash,
           role: 'ends_on_date',
         })),
         // Total cash prize (predicate)
-        hashDataToIPFS(
-          {
-            '@context': 'https://schema.org/',
-            '@type': 'Thing',
-            name: 'total cash prize',
-          },
-          pinataJwt,
-        ).then((result) => ({
-          ipfsHash: result.ipfsHash,
+        storeHackathonData({name: "total cash prize"}).then((ipfsHash) => ({
+          ipfsHash: ipfsHash,
           role: 'total_cash_prize',
         })),
         // Total cash prize amount (value)
-        hashDataToIPFS(
-          {
-            '@context': 'https://schema.org/',
-            '@type': 'Thing',
-            name: `${formState.totalCashPrize} ${formState.selectedTicker}`,
-          },
-          pinataJwt,
-        ).then((result) => ({
-          ipfsHash: result.ipfsHash,
+        storeHackathonData({name: `${formState.totalCashPrize} ${formState.selectedTicker}`}).then((ipfsHash) => ({
+          ipfsHash: ipfsHash,
           role: 'total_cash_prize_amount',
         })),
         // BuildProof test
-        hashDataToIPFS(
-          {
-            '@context': 'https://schema.org/',
-            '@type': 'Thing',
-            name: 'BuildProof test',
-          },
-          pinataJwt,
-        ).then((result) => ({
-          ipfsHash: result.ipfsHash,
+        storeHackathonData({name: "BuildProof test"}).then((ipfsHash) => ({
+          ipfsHash: ipfsHash,
           role: 'buildproof_test',
         })),
         // Prizes
         ...prizes
           .flatMap((prize, index) => {
-            const prizeKey =
-              index === 0
-                ? 'first_place'
-                : index === 1
-                  ? 'second_place'
-                  : index === 2
-                    ? 'third_place'
-                    : `other_place_${String.fromCharCode(97 + index - 3)}`
-
+            let prizeKey 
+            switch (index) {
+              case 0:
+                prizeKey = 'first_place'
+                break
+              case 1:
+                prizeKey = 'second_place'
+                break
+              case 2:
+                prizeKey = 'third_place'
+                break
+              default:
+                prizeKey = `other_place_${String.fromCharCode(97 + index - 3)}`
+            }
+        
             return [
               // Prize name (predicate)
-              hashDataToIPFS(
-                {
-                  '@context': 'https://schema.org/',
-                  '@type': 'Thing',
-                  name: prize.name,
-                },
-                pinataJwt,
-              ).then((result) => ({
-                ipfsHash: result.ipfsHash,
+              storeHackathonData({name: prize.name}).then((ipfsHash) => ({
+                ipfsHash: ipfsHash,
                 role: prizeKey,
               })),
               // Prize amount (value)
-              hashDataToIPFS(
-                {
-                  '@context': 'https://schema.org/',
-                  '@type': 'Thing',
-                  name: `${prize.amount} ${formState.selectedTicker}`,
-                },
-                pinataJwt,
-              ).then((result) => ({
-                ipfsHash: result.ipfsHash,
+              storeHackathonData({name: `${prize.amount} ${formState.selectedTicker}`}).then((ipfsHash) => ({
+                ipfsHash: ipfsHash,
                 role: `${prizeKey}_amount`,
               })),
             ]
@@ -310,7 +240,7 @@ const SubmitHackathon = () => {
       ])
 
       // Créer le mapping des atomes avec leurs rôles
-      const atomMapping = await createAtomMapping(atomsToCreate)
+      const atomMapping = await createAtomMapping(atomstoCreate)
 
       // S'assurer que tous les atomes existent et obtenir leurs IDs
       const finalMapping = await ensureAtomsExist(atomMapping)

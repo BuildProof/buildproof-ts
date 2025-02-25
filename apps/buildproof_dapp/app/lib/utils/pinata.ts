@@ -38,7 +38,8 @@ export const uploadToPinata = async (file: File): Promise<string> => {
   }
 }
 
-export const isIpfsUrl = (url: string): boolean => {
+export const isIpfsUrl = (url: string | undefined): boolean => {
+  if (!url) return false
   return url.startsWith('ipfs://')
 }
 

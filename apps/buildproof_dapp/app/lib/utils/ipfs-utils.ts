@@ -1,4 +1,10 @@
-export const hashDataToIPFS = async (data: any, PINATA_JWT?: string) => {
+const pinataJwt = import.meta.env.VITE_PINATA_JWT_KEY
+
+export const hashDataToIPFS = async (data: any) => {
+  if (!pinataJwt) {
+    throw new Error('PINATA_JWT_KEY is not configured')
+  }
+
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' })
   const formData = new FormData()
   formData.append('file', blob)
@@ -8,7 +14,7 @@ export const hashDataToIPFS = async (data: any, PINATA_JWT?: string) => {
     {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${PINATA_JWT || process.env.PINATA_JWT}`,
+        Authorization: `Bearer ${pinataJwt}`,
       },
       body: formData,
     },

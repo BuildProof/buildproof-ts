@@ -70,7 +70,7 @@ export const HackathonInfos = ({ atomId }: HackathonInfosProps) => {
     const fetchIpfsData = async () => {
       if (atomData?.data && atomData.data.startsWith('ipfs://')) {
         const ipfsHash = atomData.data.replace('ipfs://', '')
-        const ipfsUrl = `https://ipfs.io/ipfs/${ipfsHash}`
+        const ipfsUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`
         try {
           const response = await fetch(ipfsUrl)
           const data = await response.json()

@@ -13,6 +13,13 @@ export type IpfsAtom = {
   image?: string
 }
 
+export type IpfsAtomInput = {
+  
+  name: string
+  description?: string
+  image?: string
+}
+
 export type AtomInfo = {
   ipfsHash: string
   id: bigint | null
