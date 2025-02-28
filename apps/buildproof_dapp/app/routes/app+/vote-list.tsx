@@ -9,7 +9,8 @@ import { json, LoaderFunctionArgs } from '@remix-run/node'
 import { useLoaderData } from '@remix-run/react'
 import { requireUser } from '@server/auth'
 
-import { VotingPage } from '../../components/vote/VotingPage'
+import { StakeDistribution } from '../../components/vote/StakeDistribution'
+import { SearchBar } from '@components/vote/SearchBar'
 
 configureClient({
   apiUrl: 'https://dev.base-sepolia.intuition-api.com/v1/graphql',
@@ -132,12 +133,13 @@ const VotePage = () => {
   }
 
   return (
-    <VotingPage
-      triplesData={triplesData}
-      userAddress={userAddress}
-      onSearch={handleSearch}
-      currentSearch={currentSearch}
-    />
+    <div className="flex flex-col gap-4 mt-2">
+      <SearchBar onSearch={handleSearch} initialValues={currentSearch} />
+      <StakeDistribution
+        triplesData={triplesData}
+        userAddress={userAddress}
+      />
+    </div>
   )
 }
 

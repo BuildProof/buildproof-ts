@@ -98,16 +98,6 @@ interface VotingPageViewProps {
   userAddress: string
   triplesData: GetTriplesWithPositionsQuery | undefined
   ethPrice: string
-  onSearch: (search: {
-    subject: string | null
-    predicate: string | null
-    object: string | null
-  }) => void
-  searchValues: {
-    subject: string | null
-    predicate: string | null
-    object: string | null
-  }
 }
 
 export const VotingPageView = ({
@@ -137,8 +127,6 @@ export const VotingPageView = ({
   userAddress,
   triplesData,
   ethPrice,
-  onSearch,
-  searchValues,
 }: VotingPageViewProps) => {
   const [redeemModalState, setRedeemModalState] = useState<{
     isOpen: boolean
@@ -183,33 +171,9 @@ export const VotingPageView = ({
   return (
     <div className="flex-1">
       <div className="max-w-4xl mx-auto relative min-h-screen">
-        {/* Fixed header */}
-        <div className="sticky top-0 p-4 z-10">
-          <SegmentedControl>
-            {tabs.map((tab) => (
-              <SegmentedControlItem
-                key={tab.value}
-                isActive={selectedTab === tab.value}
-                onClick={() => setSelectedTab(tab.value)}
-              >
-                {tab.label}
-              </SegmentedControlItem>
-            ))}
-          </SegmentedControl>
-        </div>
 
         {/* Main content */}
-        <div className="p-4 space-y-6">
-          {/* Carte d'explication avec SearchBar */}
-          <EmptyStateCard
-            title="How to Vote"
-            message="Use the sliders to allocate your voting power. Positive values support a project, negative values oppose it. The total absolute values cannot exceed 100%."
-            className="mb-6"
-          >
-            <div className="mt-4">
-              <SearchBar onSearch={onSearch} initialValues={searchValues} />
-            </div>
-          </EmptyStateCard>
+        <div className="p-4 space-y-6">          
 
           {/* Currency Toggle et Reset */}
           <CurrencyToggle

@@ -24,16 +24,6 @@ import { VotingPageView } from './VotingPageView'
 interface VotingPageProps {
   triplesData: GetTriplesWithPositionsQuery | undefined
   userAddress: string | undefined
-  onSearch: (search: {
-    subject: string | null
-    predicate: string | null
-    object: string | null
-  }) => void
-  currentSearch: {
-    subject: string | null
-    predicate: string | null
-    object: string | null
-  }
 }
 
 interface EthPriceResponse {
@@ -77,11 +67,11 @@ interface TripleWithVaults {
   counter_vault: VaultWithSharePrice
 }
 
-export const VotingPage = ({
+export const StakeDistribution = ({
   triplesData,
   userAddress,
-  onSearch,
-  currentSearch,
+  // onSearch,
+  // currentSearch,
 }: VotingPageProps) => {
   const [selectedTab, setSelectedTab] = useState('voting')
   const [currentPage, setCurrentPage] = useState(1)
@@ -624,7 +614,7 @@ export const VotingPage = ({
     object: string | null
   }) => {
     setSearchValues(values)
-    onSearch(values)
+    // onSearch(values)
   }
 
   return (
@@ -670,8 +660,6 @@ export const VotingPage = ({
       userAddress={userAddress || ''}
       triplesData={triplesData as any}
       ethPrice={ethPrice}
-      onSearch={onSearch}
-      searchValues={currentSearch}
     />
   )
 }
