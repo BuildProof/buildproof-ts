@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 
 import { configureClient, SubAtomDocument } from '@0xintuition/graphql_bp'
 
+import buildproofLogo from '@assets/svg/buildproof-logo.svg'
 import { ipfsToHttpUrl } from '@lib/utils/pinata'
+import { json, LoaderFunctionArgs } from '@remix-run/node'
+import { useLoaderData, useParams } from '@remix-run/react'
+import { requireUser } from '@server/auth'
 import { createClient } from 'graphql-ws'
-
-import buildproofLogo from '../../assets/svg/buildproof-logo.svg'
 
 configureClient({
   apiUrl: 'https://dev.base-sepolia.intuition-api.com/v1/graphql',
@@ -14,6 +16,30 @@ configureClient({
 const wsClient = createClient({
   url: 'wss://dev.base-sepolia.intuition-api.com/v1/graphql',
 })
+
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  try {
+    const user = await requireUser(request)
+    const { id } = params
+
+    if (!id) {
+      throw new Error('Hackathon ID is required')
+    }
+
+    return json({
+      atomId: parseInt(id),
+      userAddress: user.wallet?.address || '',
+    })
+  } catch (error) {
+    console.error('Error in hackathon details loader:', error)
+    throw error
+  }
+}
+
+export default function HackathonDetails() {
+  const { atomId } = useLoaderData<typeof loader>()
+  return <HackathonInfos atomId={atomId} />
+}
 
 interface HackathonInfosProps {
   atomId: number

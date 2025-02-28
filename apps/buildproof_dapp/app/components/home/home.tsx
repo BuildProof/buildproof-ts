@@ -159,7 +159,7 @@ export function Home() {
           {paginatedHackathons.map((hackathon, index) => (
             <a
               key={index}
-              href={`/hackathonDetails/${hackathon.id}`}
+              href={`app/hackathon/${hackathon.id}/details`}
               className="block transition-transform hover:scale-105"
               onClick={(e) => {
                 if (

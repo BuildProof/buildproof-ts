@@ -17,6 +17,7 @@ import { getEnv } from '@server/env'
 import { getTheme } from '@server/theme'
 
 import './styles/globals.css'
+import './styles/vote.css'
 
 import { useEffect } from 'react'
 

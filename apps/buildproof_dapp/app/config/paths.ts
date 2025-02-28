@@ -15,4 +15,6 @@ export const PATHS = {
   SUBMIT_PROJECT: '/app/submit-project',
   // Verify
   VERIFY: '/app/verify',
+  // Hackathon
+  HACKATHON: '/app/hackathon',
 }
