@@ -5,18 +5,11 @@ import {
   Claim,
   ClaimPosition,
   ClaimRow,
-  cn,
   MultiSlider,
-  Pagination,
-  PaginationContent,
   PaginationEllipsis,
-  PaginationItem,
   PaginationLink,
   PaginationNext,
-  PaginationPageCounter,
   PaginationPrevious,
-  PaginationRowSelection,
-  PaginationSummary,
 } from '@0xintuition/buildproof_ui'
 import type { GetTriplesWithPositionsQuery } from '@0xintuition/graphql_bp'
 
@@ -24,11 +17,10 @@ import { formatUnits } from 'viem'
 
 import { CURRENT_ENV } from '../../consts'
 import { getChainEnvConfig } from '../../lib/utils/environment'
-import { calculateStakeValue } from './CalcuateStakeValue'
-import { CurrencyToggle } from './CurrencyToggle'
-import { RedeemStakeModal } from './RedeemStakeModal'
-import { SearchBar } from './SearchBar'
-import type { SupportedCurrency, VoteItem } from './types'
+import { calculateStakeValue } from '../vote/CalcuateStakeValue'
+import { CurrencyToggle } from '../vote/CurrencyToggle'
+import { RedeemStakeModal } from '../vote/RedeemStakeModal'
+import type { SupportedCurrency, VoteItem } from '../vote/types'
 
 const formatTVL = (
   value: string,

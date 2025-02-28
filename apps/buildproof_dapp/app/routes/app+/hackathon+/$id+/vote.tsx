@@ -1,18 +1,17 @@
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 
-import { ClaimPosition } from '@0xintuition/buildproof_ui'
+import { ClaimPosition, Skeleton } from '@0xintuition/buildproof_ui'
 import { configureClient } from '@0xintuition/graphql_bp'
 
+import { VotingPageView } from '@components/hackathon/VotingPageHackathon'
 import { RedeemStakeModal } from '@components/vote/RedeemStakeModal'
 import type { SupportedCurrency, VoteItem } from '@components/vote/types'
-import { VotingPageView } from '@components/vote/VotingPageHackathon'
 import { useBatchDepositTriple } from '@lib/hooks/useBatchDepositTriple'
 import { useHackathonTriples } from '@lib/hooks/useHackathonTriples'
 import { useVerifyAttestor } from '@lib/hooks/useVerifyAttestor'
 import { getChainEnvConfig } from '@lib/utils/environment'
 import { json, LoaderFunctionArgs } from '@remix-run/node'
-import { useLoaderData, useParams } from '@remix-run/react'
-import { requireUser } from '@server/auth'
+import { useOutletContext, useParams } from '@remix-run/react'
 import { CURRENT_ENV } from 'app/consts'
 import { parseEther } from 'viem'
 
@@ -21,20 +20,18 @@ configureClient({
 })
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  try {
-    const user = await requireUser(request)
-    return json({
-      userAddress: user.wallet?.address || '',
-    })
-  } catch (error) {
-    console.error('Error in vote loader:', error)
-    throw error
-  }
+  // Parent route handles authentication and common data
+  return null
+}
+
+type HackathonContext = {
+  userAddress: string
+  atomId: number
 }
 
 export default function HackathonVotePage() {
   const { id } = useParams()
-  const { userAddress } = useLoaderData<typeof loader>()
+  const { userAddress } = useOutletContext<HackathonContext>()
 
   // États nécessaires pour VotingPageView
   const [ethAmount, setEthAmount] = useState('0.001')
@@ -72,7 +69,25 @@ export default function HackathonVotePage() {
   }
 
   if (!id || loading) {
-    return <div>Loading...</div>
+    return (
+      <div className="container mx-auto p-4">
+        <div className="space-y-8">
+          <div className="flex justify-between items-center">
+            <Skeleton className="h-16 w-[600px]" />
+            <Skeleton className="h-16 w-48" />
+          </div>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="space-y-6">
+              <div className="flex justify-between items-center">
+                <Skeleton className="h-12 w-full max-w-4xl" />
+                <Skeleton className="h-12 w-48" />
+              </div>
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   if (error) {
@@ -173,72 +188,96 @@ export default function HackathonVotePage() {
   }
 
   return (
-    <div
-      className="voting-page-container"
-      style={{ '--hide-elements': 'true' } as React.CSSProperties}
-    >
-      <VotingPageView
-        tabs={[{ value: 'voting', label: 'Voting' }]}
-        ethAmount={ethAmount}
-        setEthAmount={setEthAmount}
-        totalAbsoluteValue={Object.values(sliderValues).reduce(
-          (sum, value) => sum + Math.abs(value),
-          0,
-        )}
-        resetAllSliders={() => setSliderValues({})}
-        sortedItems={sortedItems}
-        sliderValues={sliderValues}
-        resetSingleSlider={(id: string) => {
-          const newValues = { ...sliderValues }
-          delete newValues[id]
-          setSliderValues(newValues)
-        }}
-        handleSliderChange={(id: string, value: number) => {
-          setSliderValues({ ...sliderValues, [id]: value })
-        }}
-        handleSliderCommit={(id: string, value: number) => {
-          setSliderValues({ ...sliderValues, [id]: value })
-        }}
-        canSubmit={Object.values(sliderValues).some((value) => value !== 0)}
-        handleSubmit={handleSubmit}
-        currentPage={currentPage}
-        totalPages={Math.ceil(sortedItems.length / Number(rowsPerPage))}
-        rowsPerPage={rowsPerPage}
-        setRowsPerPage={setRowsPerPage}
-        setCurrentPage={setCurrentPage}
-        data={sortedItems}
-        currency={currency}
-        onCurrencyToggle={() => setCurrency(currency === 'ETH' ? '$' : 'ETH')}
-        setDebouncedSliderValues={setSliderValues}
-        userAddress={userAddress}
-        triplesData={triplesData}
-        ethPrice={ethPrice}
-        onRedeemClick={handleRedeemClick}
-      />
+    <div className="w-full">
+      <Suspense
+        fallback={
+          <div className="space-y-8">
+            <div className="flex justify-between items-center">
+              <Skeleton className="h-16 w-[600px]" />
+              <Skeleton className="h-16 w-48" />
+            </div>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <Skeleton className="h-12 w-full max-w-4xl" />
+                  <Skeleton className="h-12 w-48" />
+                </div>
+                <Skeleton className="h-8 w-full" />
+              </div>
+            ))}
+          </div>
+        }
+      >
+        <div
+          className="voting-page-container"
+          style={{ '--hide-elements': 'true' } as React.CSSProperties}
+        >
+          <VotingPageView
+            tabs={[{ value: 'voting', label: 'Voting' }]}
+            ethAmount={ethAmount}
+            setEthAmount={setEthAmount}
+            totalAbsoluteValue={Object.values(sliderValues).reduce(
+              (sum, value) => sum + Math.abs(value),
+              0,
+            )}
+            resetAllSliders={() => setSliderValues({})}
+            sortedItems={sortedItems}
+            sliderValues={sliderValues}
+            resetSingleSlider={(id: string) => {
+              const newValues = { ...sliderValues }
+              delete newValues[id]
+              setSliderValues(newValues)
+            }}
+            handleSliderChange={(id: string, value: number) => {
+              setSliderValues({ ...sliderValues, [id]: value })
+            }}
+            handleSliderCommit={(id: string, value: number) => {
+              setSliderValues({ ...sliderValues, [id]: value })
+            }}
+            canSubmit={Object.values(sliderValues).some((value) => value !== 0)}
+            handleSubmit={handleSubmit}
+            currentPage={currentPage}
+            totalPages={Math.ceil(sortedItems.length / Number(rowsPerPage))}
+            rowsPerPage={rowsPerPage}
+            setRowsPerPage={setRowsPerPage}
+            setCurrentPage={setCurrentPage}
+            data={sortedItems}
+            currency={currency}
+            onCurrencyToggle={() =>
+              setCurrency(currency === 'ETH' ? '$' : 'ETH')
+            }
+            setDebouncedSliderValues={setSliderValues}
+            userAddress={userAddress}
+            triplesData={triplesData}
+            ethPrice={ethPrice}
+            onRedeemClick={handleRedeemClick}
+          />
 
-      <RedeemStakeModal
-        isOpen={redeemModalState.isOpen}
-        onClose={() =>
-          setRedeemModalState({ isOpen: false, claimId: '', maxStake: 0 })
-        }
-        claimId={redeemModalState.claimId}
-        maxStake={redeemModalState.maxStake}
-        contractAddress={getChainEnvConfig(CURRENT_ENV).contractAddress}
-        userAddress={userAddress}
-        totalShares={
-          triplesData?.triples.find(
-            (t) =>
-              t.vault_id === redeemModalState.claimId ||
-              t.counter_vault_id === redeemModalState.claimId,
-          )?.vault?.positions?.[0]?.shares ||
-          triplesData?.triples.find(
-            (t) =>
-              t.vault_id === redeemModalState.claimId ||
-              t.counter_vault_id === redeemModalState.claimId,
-          )?.counter_vault?.positions?.[0]?.shares ||
-          '0'
-        }
-      />
+          <RedeemStakeModal
+            isOpen={redeemModalState.isOpen}
+            onClose={() =>
+              setRedeemModalState({ isOpen: false, claimId: '', maxStake: 0 })
+            }
+            claimId={redeemModalState.claimId}
+            maxStake={redeemModalState.maxStake}
+            contractAddress={getChainEnvConfig(CURRENT_ENV).contractAddress}
+            userAddress={userAddress}
+            totalShares={
+              triplesData?.triples.find(
+                (t) =>
+                  t.vault_id === redeemModalState.claimId ||
+                  t.counter_vault_id === redeemModalState.claimId,
+              )?.vault?.positions?.[0]?.shares ||
+              triplesData?.triples.find(
+                (t) =>
+                  t.vault_id === redeemModalState.claimId ||
+                  t.counter_vault_id === redeemModalState.claimId,
+              )?.counter_vault?.positions?.[0]?.shares ||
+              '0'
+            }
+          />
+        </div>
+      </Suspense>
     </div>
   )
 }

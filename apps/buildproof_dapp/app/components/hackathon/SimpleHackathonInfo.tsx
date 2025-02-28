@@ -102,18 +102,7 @@ export const SimpleHackathonInfo = ({
                 ? ipfsData.name || 'No name available'
                 : 'Fetching name...'}
           </h2>
-          {onToggle && (
-            <button
-              onClick={onToggle}
-              className="text-blue-400 hover:text-blue-300 flex items-center"
-            >
-              {isExpanded ? 'Show less' : 'Show more'}
-              <span className="ml-1">{isExpanded ? '↑' : '↓'}</span>
-            </button>
-          )}
         </div>
-
-        {isExpanded && (
           <div className="text-gray-300">
             {!atomData
               ? 'Loading...'
@@ -121,7 +110,6 @@ export const SimpleHackathonInfo = ({
                 ? ipfsData.description || 'No description available'
                 : 'Fetching description...'}
           </div>
-        )}
       </div>
     </div>
   )

@@ -1,42 +1,49 @@
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 
-import { ClaimRow } from '@0xintuition/buildproof_ui'
+import { ClaimPosition, ClaimRow, Skeleton } from '@0xintuition/buildproof_ui'
 import { configureClient } from '@0xintuition/graphql_bp'
 
 import { SimpleHackathonInfo } from '@components/hackathon/SimpleHackathonInfo'
 import { RedeemStakeModal } from '@components/vote/RedeemStakeModal'
+import type { SupportedCurrency } from '@components/vote/types'
+import { VotingPageView } from '@components/hackathon/VotingPageHackathon'
+import { useBatchDepositTriple } from '@lib/hooks/useBatchDepositTriple'
 import { useHackathonTriples } from '@lib/hooks/useHackathonTriples'
+import { useVerifyAttestor } from '@lib/hooks/useVerifyAttestor'
 import { getChainEnvConfig } from '@lib/utils/environment'
 import { json, LoaderFunctionArgs, redirect } from '@remix-run/node'
-import { Link, useLoaderData, useParams } from '@remix-run/react'
-import { requireUser } from '@server/auth'
-import { PATHS } from 'app/config/paths'
+import {
+  Link,
+  useOutletContext,
+  useParams,
+} from '@remix-run/react'
 import { CURRENT_ENV } from 'app/consts'
-import { formatUnits } from 'viem'
+import { parseEther } from 'viem'
 
 configureClient({
   apiUrl: 'https://dev.base-sepolia.intuition-api.com/v1/graphql',
 })
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  try {
-    const user = await requireUser(request)
-    if (!user || !user.wallet?.address) {
-      return redirect(PATHS.LOGIN)
-    }
-    return json({
-      userAddress: user.wallet.address,
-    })
-  } catch (error) {
-    console.error('Error in overview loader:', error)
-    return redirect(PATHS.LOGIN)
-  }
+  // Parent route handles authentication and common data
+  return null
+}
+
+type HackathonContext = {
+  userAddress: string
+  atomId: number
 }
 
 export default function HackathonOverview() {
   const { id } = useParams()
-  const { userAddress } = useLoaderData<typeof loader>()
+  const { userAddress } = useOutletContext<HackathonContext>()
   const [isExpanded, setIsExpanded] = useState(false)
+  const [ethAmount, setEthAmount] = useState('0.001')
+  const [currency, setCurrency] = useState<SupportedCurrency>('ETH')
+  const [sliderValues, setSliderValues] = useState<{ [key: string]: number }>(
+    {},
+  )
+  const [ethPrice, setEthPrice] = useState('2000')
   const [redeemModalState, setRedeemModalState] = useState<{
     isOpen: boolean
     claimId: string
@@ -46,28 +53,75 @@ export default function HackathonOverview() {
     claimId: '',
     maxStake: 0,
   })
-  const [ethPrice, setEthPrice] = useState('2000')
 
   const { triplesData, loading, error } = useHackathonTriples({
     hackathonId: id,
     userAddress,
   })
 
-  const handleRedeemClick = (triple: any) => {
-    const userPosition =
-      triple.vault?.positions?.[0] || triple.counter_vault?.positions?.[0]
-    const sharePrice = triple.vault?.positions?.[0]
-      ? triple.vault.current_share_price
-      : triple.counter_vault?.current_share_price
+  const { batchDepositTriple } = useBatchDepositTriple()
+  const { verifyAndApproveAttestor } = useVerifyAttestor()
 
-    if (userPosition && sharePrice) {
-      setRedeemModalState({
-        isOpen: true,
-        claimId: triple.vault?.positions?.[0]
-          ? triple.vault_id
-          : triple.counter_vault_id,
-        maxStake: Number(formatUnits(BigInt(userPosition.shares), 18)),
-      })
+  const handleRedeemClick = (claimId: string, maxStake: number) => {
+    setRedeemModalState({
+      isOpen: true,
+      claimId,
+      maxStake,
+    })
+  }
+
+  const handleSubmit = async () => {
+    if (!userAddress || !ethAmount || !triplesData?.triples) return
+
+    try {
+      const attestorAddress = '0x64Abd54a86DfeB710eF2943d6304FC7B29f18e36'
+      await verifyAndApproveAttestor()
+
+      const triplesWithPercentages = triplesData.triples
+        .map((triple: any) => {
+          const percentage = sliderValues[triple.id] || 0
+          if (percentage === 0) return null
+
+          const amountToAdd = parseEther(
+            ((Math.abs(percentage) / 100) * Number(ethAmount)).toString(),
+          )
+
+          return {
+            vault_id: triple.vault_id,
+            counter_vault_id: triple.counter_vault_id,
+            percentage,
+            amountToAdd,
+          }
+        })
+        .filter((t): t is NonNullable<typeof t> => t !== null)
+
+      const stakes = {
+        ids: triplesWithPercentages.map((t) =>
+          BigInt(t.percentage > 0 ? t.vault_id : t.counter_vault_id),
+        ),
+        values: triplesWithPercentages.map((t) => t.amountToAdd),
+      }
+
+      const totalValueToSend = stakes.values.reduce(
+        (sum, value) => sum + value,
+        0n,
+      )
+
+      if (stakes.ids.length > 0) {
+        await batchDepositTriple(
+          {
+            receiver: userAddress as `0x${string}`,
+            ids: stakes.ids,
+            values: stakes.values,
+            attestorAddress: attestorAddress as `0x${string}`,
+          },
+          { value: totalValueToSend },
+        )
+      }
+
+      setSliderValues({})
+    } catch (error) {
+      console.error('Error in handleSubmit:', error)
     }
   }
 
@@ -79,132 +133,225 @@ export default function HackathonOverview() {
     return <div>Error loading data</div>
   }
 
-  // Get only the top 3 claims
-  const topClaims = (triplesData?.triples || []).slice(0, 3)
+  // Transform triples data for the voting view
+  const sortedItems = (triplesData?.triples || [])
+    .slice(0, 3)
+    .map((triple: any) => ({
+      id: triple.id,
+      subject: triple.subject?.label || '',
+      predicate: triple.predicate?.label || '',
+      object: triple.object?.label || '',
+      numPositionsFor: triple.vault?.position_count || 0,
+      numPositionsAgainst: triple.counter_vault?.position_count || 0,
+      totalTVL: triple.vault?.total_shares || '0',
+      tvlFor: triple.vault?.total_shares || '0',
+      tvlAgainst: triple.counter_vault?.total_shares || '0',
+      currency: currency,
+      votesCount:
+        (triple.vault?.position_count || 0) +
+        (triple.counter_vault?.position_count || 0),
+      totalEth:
+        Number(triple.vault?.total_shares || '0') +
+        Number(triple.counter_vault?.total_shares || '0'),
+      userPosition:
+        triple.vault?.positions?.[0]?.shares ||
+        triple.counter_vault?.positions?.[0]?.shares,
+      positionDirection: triple.vault?.positions?.[0]
+        ? ClaimPosition.claimFor
+        : triple.counter_vault?.positions?.[0]
+          ? ClaimPosition.claimAgainst
+          : undefined,
+      vault: {
+        current_share_price: triple.vault?.current_share_price || '0',
+      },
+      counter_vault: {
+        current_share_price: triple.counter_vault?.current_share_price || '0',
+      },
+    }))
 
   return (
-    <div className="container mx-auto p-4 space-y-8">
+    <div className="w-full space-y-8">
       {/* Hackathon Preview */}
-      <section className="bg-gray-800 rounded-lg shadow text-white p-6">
-        <div className="space-y-4">
-          <SimpleHackathonInfo
-            atomId={parseInt(id)}
-            isExpanded={isExpanded}
-            onToggle={() => setIsExpanded(!isExpanded)}
-          />
-          <div className="flex justify-end">
-            <Link
-              to={`/hackathon/${id}/details`}
-              className="text-blue-400 hover:text-blue-300"
-            >
-              Full Details →
-            </Link>
+      <section className="bg-gray-800 rounded-lg shadow text-white p-6 w-full">
+        <Suspense
+          fallback={
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div className="space-y-4">
+                  <Skeleton className="h-10 w-[600px]" />
+                  <Skeleton className="h-6 w-[400px]" />
+                  <Skeleton className="h-6 w-[300px]" />
+                </div>
+                <Skeleton className="h-12 w-40" />
+              </div>
+              <div className="flex justify-end">
+                <Skeleton className="h-10 w-32" />
+              </div>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <SimpleHackathonInfo
+              atomId={parseInt(id)}
+              isExpanded={isExpanded}
+              onToggle={() => setIsExpanded(!isExpanded)}
+            />
+            <div className="flex justify-end">
+              <Link
+                to={`/hackathon/${id}/details`}
+                className="text-blue-400 hover:text-blue-300"
+              >
+                Full Details →
+              </Link>
+            </div>
           </div>
-        </div>
+        </Suspense>
       </section>
 
-      {/* Vote Preview */}
+      {/* Vote Preview using VotingPageView */}
       <section className="bg-gray-800 rounded-lg shadow text-white p-6">
-        <div className="space-y-6">
-          {/* Total Stakes Input */}
-          <div className="flex justify-between items-center">
-            <div className="flex-1 max-w-md bg-gray-900 rounded-lg p-4">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-400">
-                  Your Total stakes for this hackathon
-                </span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    defaultValue="0.001"
-                    className="bg-transparent w-24 text-right"
-                  />
-                  <div className="flex bg-gray-700 rounded-lg p-1">
-                    <button className="px-2 rounded text-sm bg-blue-500">
-                      ETH
-                    </button>
-                    <button className="px-2 text-sm">USD</button>
-                  </div>
+        <Suspense
+          fallback={
+            <div className="space-y-8">
+              <div className="flex justify-between items-center mb-8">
+                <div className="flex items-center gap-6">
+                  <Skeleton className="h-16 w-64" />
+                  <Skeleton className="h-16 w-48" />
                 </div>
+                <Skeleton className="h-16 w-48" />
               </div>
-            </div>
-            <div className="ml-4 flex-1 max-w-md bg-gray-900 rounded-lg p-4">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-400">Total Stakes placed</span>
-                <div className="flex items-center gap-2">
-                  <div className="w-32 h-2 bg-gray-700 rounded-full">
-                    <div className="w-3/5 h-full bg-blue-500 rounded-full"></div>
-                  </div>
-                  <span>60/100%</span>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          {/* Claims List */}
-          <div className="space-y-4">
-            {topClaims.map((triple: any) => (
-              <ClaimRow
-                key={triple.id}
-                numPositionsFor={triple.vault?.position_count || 0}
-                numPositionsAgainst={triple.counter_vault?.position_count || 0}
-                totalTVL={triple.vault?.total_shares || '0'}
-                tvlFor={triple.vault?.total_shares || '0'}
-                tvlAgainst={triple.counter_vault?.total_shares || '0'}
-                currency="ETH"
-                onStakeForClick={() => {}}
-                onStakeAgainstClick={() => {}}
-              >
-                <div className="flex flex-col w-full gap-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-gray-700 p-8 rounded-lg space-y-8">
                   <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{triple.subject?.label}</span>
-                      <span className="text-gray-500">has tag</span>
-                      <span className="text-sm">{triple.object?.label}</span>
+                    <div className="space-y-6 flex-1 mr-8">
+                      <Skeleton className="h-12 w-full max-w-4xl" />
+                      <div className="flex gap-6">
+                        <Skeleton className="h-8 w-48" />
+                        <Skeleton className="h-8 w-48" />
+                        <Skeleton className="h-8 w-48" />
+                      </div>
                     </div>
-                    {(triple.vault?.positions?.[0] ||
-                      triple.counter_vault?.positions?.[0]) && (
-                      <button
-                        onClick={() => handleRedeemClick(triple)}
-                        className="px-2 py-1 bg-gray-800 text-sm rounded hover:bg-gray-700"
-                      >
-                        Redeem Stake
-                      </button>
-                    )}
+                    <div className="flex gap-6">
+                      <Skeleton className="h-16 w-48" />
+                      <Skeleton className="h-16 w-48" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-12 w-full" />
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-8 w-64" />
+                    <Skeleton className="h-8 w-48" />
                   </div>
                 </div>
-              </ClaimRow>
-            ))}
-          </div>
+              ))}
 
+              <div className="flex justify-center mt-12">
+                <Skeleton className="h-16 w-64" />
+              </div>
+            </div>
+          }
+        >
+          <div className="overview-preview [&_.sticky]:hidden [&_select]:hidden [&_.mr-4:has(>span)]:hidden [&>div]:!min-h-0 [&>div]:h-auto [&_.relative]:!min-h-0 [&_.max-w-4xl]:!min-h-0 [&_.flex-1]:!h-auto">
+            <VotingPageView
+              tabs={[{ value: 'voting', label: 'Top Claims' }]}
+              ethAmount={ethAmount}
+              setEthAmount={setEthAmount}
+              totalAbsoluteValue={Object.values(sliderValues).reduce(
+                (sum, value) => sum + Math.abs(value),
+                0,
+              )}
+              resetAllSliders={() => setSliderValues({})}
+              sortedItems={sortedItems}
+              sliderValues={sliderValues}
+              resetSingleSlider={(id: string) => {
+                const newValues = { ...sliderValues }
+                delete newValues[id]
+                setSliderValues(newValues)
+              }}
+              handleSliderChange={(id: string, value: number) => {
+                setSliderValues({ ...sliderValues, [id]: value })
+              }}
+              handleSliderCommit={(id: string, value: number) => {
+                setSliderValues({ ...sliderValues, [id]: value })
+              }}
+              canSubmit={Object.values(sliderValues).some(
+                (value) => value !== 0,
+              )}
+              handleSubmit={handleSubmit}
+              currentPage={1}
+              totalPages={1}
+              rowsPerPage="3"
+              setRowsPerPage={() => {}}
+              setCurrentPage={() => {}}
+              data={sortedItems}
+              currency={currency}
+              onCurrencyToggle={() =>
+                setCurrency(currency === 'ETH' ? '$' : 'ETH')
+              }
+              setDebouncedSliderValues={setSliderValues}
+              userAddress={userAddress}
+              triplesData={triplesData}
+              ethPrice={ethPrice}
+              onRedeemClick={handleRedeemClick}
+            />
+          </div>
           <div className="mt-6 flex justify-center">
             <Link
-              to={`/hackathon/${id}/vote`}
+              to={`/app/hackathon/${id}/vote`}
               className="px-8 py-2 bg-gray-700 text-white rounded-full hover:bg-gray-600"
             >
               View All Claims
             </Link>
           </div>
-        </div>
+        </Suspense>
       </section>
 
       {/* Activity Log Preview */}
       <section className="bg-gray-800 rounded-lg shadow text-white">
         <div className="p-6">
-          <h2 className="text-xl font-bold mb-4">Activity Log</h2>
-          <div className="text-gray-400 text-center py-8">
-            Activity Log coming soon...
-          </div>
+          <Suspense
+            fallback={
+              <div className="space-y-6">
+                <Skeleton className="h-10 w-48 mb-8" />
+                <div className="space-y-6">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-start gap-4">
+                      <Skeleton className="h-12 w-12 rounded-full" />
+                      <div className="flex-1 space-y-3">
+                        <Skeleton className="h-6 w-full" />
+                        <Skeleton className="h-4 w-3/4" />
+                      </div>
+                      <Skeleton className="h-6 w-24" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            }
+          >
+            <h2 className="text-xl font-bold mb-4">Activity Log</h2>
+            <div className="text-gray-400 text-center py-8">
+              Activity Log coming soon...
+            </div>
+          </Suspense>
         </div>
       </section>
 
       {/* Graph Preview */}
       <section className="bg-gray-800 rounded-lg shadow text-white">
         <div className="p-6">
-          <h2 className="text-xl font-bold mb-4">Graph Visualization</h2>
-          <div className="text-gray-400 text-center py-8">
-            Graph visualization coming soon...
-          </div>
+          <Suspense
+            fallback={
+              <div className="space-y-6">
+                <Skeleton className="h-10 w-48 mb-8" />
+                <Skeleton className="h-[500px] w-full rounded-lg bg-gray-700" />
+              </div>
+            }
+          >
+            <h2 className="text-xl font-bold mb-4">Graph Visualization</h2>
+            <div className="text-gray-400 text-center py-8">
+              Graph visualization coming soon...
+            </div>
+          </Suspense>
         </div>
       </section>
 

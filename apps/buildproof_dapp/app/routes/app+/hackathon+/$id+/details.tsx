@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 
+import { Skeleton } from '@0xintuition/buildproof_ui'
 import { configureClient, SubAtomDocument } from '@0xintuition/graphql_bp'
 
 import buildproofLogo from '@assets/svg/buildproof-logo.svg'
 import { ipfsToHttpUrl } from '@lib/utils/pinata'
 import { json, LoaderFunctionArgs } from '@remix-run/node'
-import { useLoaderData, useParams } from '@remix-run/react'
-import { requireUser } from '@server/auth'
+import { useOutletContext } from '@remix-run/react'
 import { createClient } from 'graphql-ws'
 
 configureClient({
@@ -18,27 +18,47 @@ const wsClient = createClient({
 })
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  try {
-    const user = await requireUser(request)
-    const { id } = params
+  // Parent route handles authentication and common data
+  return null
+}
 
-    if (!id) {
-      throw new Error('Hackathon ID is required')
-    }
-
-    return json({
-      atomId: parseInt(id),
-      userAddress: user.wallet?.address || '',
-    })
-  } catch (error) {
-    console.error('Error in hackathon details loader:', error)
-    throw error
-  }
+type HackathonContext = {
+  userAddress: string
+  atomId: number
 }
 
 export default function HackathonDetails() {
-  const { atomId } = useLoaderData<typeof loader>()
-  return <HackathonInfos atomId={atomId} />
+  const { atomId } = useOutletContext<HackathonContext>()
+
+  return (
+    <div className="w-full">
+      <div className="bg-gray-600 p-6 rounded-lg text-white w-full">
+        <Suspense
+          fallback={
+            <div className="space-y-6">
+              <Skeleton className="h-8 w-64 mx-auto" />
+              <div className="flex justify-center gap-2">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-6 w-16" />
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Skeleton className="h-32 w-full" />
+                <Skeleton className="h-32 w-full" />
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-48 w-full" />
+              </div>
+            </div>
+          }
+        >
+          <HackathonInfos atomId={atomId} />
+        </Suspense>
+      </div>
+    </div>
+  )
 }
 
 interface HackathonInfosProps {
@@ -115,8 +135,30 @@ export const HackathonInfos = ({ atomId }: HackathonInfosProps) => {
     return <div>Error loading hackathon data</div>
   }
 
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-64 mx-auto" />
+        <div className="flex justify-center gap-2">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-6 w-16" />
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-48 w-full" />
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="bg-gray-600 p-6 rounded-lg text-white max-w-4xl mx-auto">
+    <div className="space-y-6">
       <h2 className="text-center text-lg font-bold">
         Basic hackathon information
       </h2>
