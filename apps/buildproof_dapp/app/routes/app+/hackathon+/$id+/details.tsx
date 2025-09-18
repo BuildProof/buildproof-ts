@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 
+import { Skeleton } from '@0xintuition/buildproof_ui'
 import { configureClient, SubAtomDocument } from '@0xintuition/graphql_bp'
 
+import buildproofLogo from '@assets/svg/buildproof-logo.svg'
 import { ipfsToHttpUrl } from '@lib/utils/pinata'
+import { json, LoaderFunctionArgs } from '@remix-run/node'
+import { useOutletContext } from '@remix-run/react'
 import { createClient } from 'graphql-ws'
-
-import buildproofLogo from '../../assets/svg/buildproof-logo.svg'
 
 configureClient({
   apiUrl: 'https://dev.base-sepolia.intuition-api.com/v1/graphql',
@@ -14,6 +16,50 @@ configureClient({
 const wsClient = createClient({
   url: 'wss://dev.base-sepolia.intuition-api.com/v1/graphql',
 })
+
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  // Parent route handles authentication and common data
+  return null
+}
+
+type HackathonContext = {
+  userAddress: string
+  atomId: number
+}
+
+export default function HackathonDetails() {
+  const { atomId } = useOutletContext<HackathonContext>()
+
+  return (
+    <div className="w-full">
+      <div className="bg-gray-600 p-6 rounded-lg text-white w-full">
+        <Suspense
+          fallback={
+            <div className="space-y-6">
+              <Skeleton className="h-8 w-64 mx-auto" />
+              <div className="flex justify-center gap-2">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-6 w-16" />
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Skeleton className="h-32 w-full" />
+                <Skeleton className="h-32 w-full" />
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-48 w-full" />
+              </div>
+            </div>
+          }
+        >
+          <HackathonInfos atomId={atomId} />
+        </Suspense>
+      </div>
+    </div>
+  )
+}
 
 interface HackathonInfosProps {
   atomId: number
@@ -70,7 +116,7 @@ export const HackathonInfos = ({ atomId }: HackathonInfosProps) => {
     const fetchIpfsData = async () => {
       if (atomData?.data && atomData.data.startsWith('ipfs://')) {
         const ipfsHash = atomData.data.replace('ipfs://', '')
-        const ipfsUrl = `https://ipfs.io/ipfs/${ipfsHash}`
+        const ipfsUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`
         try {
           const response = await fetch(ipfsUrl)
           const data = await response.json()
@@ -89,8 +135,30 @@ export const HackathonInfos = ({ atomId }: HackathonInfosProps) => {
     return <div>Error loading hackathon data</div>
   }
 
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-64 mx-auto" />
+        <div className="flex justify-center gap-2">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-6 w-16" />
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-48 w-full" />
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="bg-gray-600 p-6 rounded-lg text-white max-w-4xl mx-auto">
+    <div className="space-y-6">
       <h2 className="text-center text-lg font-bold">
         Basic hackathon information
       </h2>

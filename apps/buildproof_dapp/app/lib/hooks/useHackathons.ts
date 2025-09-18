@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { configureClient, useGetTriplesQuery } from '@0xintuition/graphql_bp'
+import { ipfsToHttpUrl } from '@lib/utils/pinata'
 
 configureClient({
   apiUrl: 'https://dev.base-sepolia.intuition-api.com/v1/graphql',
@@ -111,24 +112,25 @@ export function useHackathons(adminAddresses: string[] = []) {
           // Trouver le cash prize dans les triples du sujet
           const cashPrize =
             triple.subject.as_subject_triples?.find(
-              (t) => t.predicate.data === 'total cash prize',
-            )?.object.data || '0'
+              (t) => t.predicate.label === 'total cash prize',
+            )?.object.label || '0'
 
           // Trouver les dates dans les triples du sujet
           const startDateTriple = triple.subject.as_subject_triples?.find(
-            (t) => t.predicate.data === 'starts_on',
+            (t) => t.predicate.label === 'starts_on',
           )
           const endDateTriple = triple.subject.as_subject_triples?.find(
-            (t) => t.predicate.data === 'ends_on',
+            (t) => t.predicate.label === 'ends_on',
           )
-
           const now = new Date()
-          const startDate = startDateTriple?.object.data
-            ? new Date(startDateTriple.object.data)
+          const startDate = startDateTriple?.object.label
+            ? new Date(startDateTriple.object.label)
             : now
-          const endDate = endDateTriple?.object.data
-            ? new Date(endDateTriple.object.data)
+          const endDate = endDateTriple?.object.label
+            ? new Date(endDateTriple.object.label)
             : now
+
+          const image = ipfsToHttpUrl(ipfsData.image) || triple.subject.image
 
           let status: HackathonStatus = 'upcoming'
           if (now > endDate) {
@@ -136,19 +138,18 @@ export function useHackathons(adminAddresses: string[] = []) {
           } else if (now >= startDate && now <= endDate) {
             status = 'ongoing'
           }
-
           const hackathon: Hackathon = {
             id: triple.subject.id,
-            title: ipfsData.name || triple.subject.label || 'Unnamed Hackathon',
+            title: triple.subject.label || 'Unnamed Hackathon',
             description: ipfsData.description || 'No description available',
             tags: [triple.object.label || ''].filter(Boolean),
             cashPrize: `$${cashPrize}`,
             imgSrc:
-              ipfsData.image ||
+              image ||
               triple.subject.image ||
               'https://avatars.githubusercontent.com/u/186075312?s=200&v=4',
-            startDate: startDateTriple?.object.data || 'TBA',
-            endDate: endDateTriple?.object.data || 'TBA',
+            startDate: startDateTriple?.object.label || 'TBA',
+            endDate: endDateTriple?.object.label || 'TBA',
             status,
             isLiked: false,
           }

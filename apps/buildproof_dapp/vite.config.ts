@@ -57,4 +57,7 @@ export default defineConfig({
     ],
   },
   assetsInclude: ['**/*.csv'],
+  define: {
+    'import.meta.env.VITE_PINATA_JWT_KEY': JSON.stringify(process.env.VITE_PINATA_JWT_KEY),
+  }
 })

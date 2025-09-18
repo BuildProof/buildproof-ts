@@ -45,8 +45,8 @@ const RootLayout: React.FC<RootLayoutProps> = ({ children }) => {
             </Link>
             {authenticated && (
               <>
-                <Link to="/app/vote">
-                  <SidebarNavItem iconName={IconName.medal} label="Vote" />
+                <Link to="/app/vote-list">
+                  <SidebarNavItem iconName={IconName.medal} label="Vote List" />
                 </Link>
                 <Link to="/app/submit-project">
                   <SidebarNavItem

@@ -1,0 +1,35 @@
+/* Style pour masquer les éléments non désirés dans la page de vote */
+.voting-page-container[style*="--hide-elements: true"] {
+  /* Masquer la barre de recherche */
+  & .search-bar {
+    display: none;
+  }
+
+  /* Masquer les boutons de pagination */
+  & .pagination {
+    display: none;
+  }
+
+  /* Masquer les onglets de navigation */
+  & .segmented-control {
+    display: none;
+  }
+
+  /* Masquer la carte d'explication */
+  & .empty-state-card {
+    display: none;
+  }
+
+  /* Masquer les boutons de réinitialisation */
+  & button[aria-label="Reset all sliders"],
+  & button[aria-label="Reset slider"] {
+    display: none;
+  }
+
+  /* Ne garder que l'input de valeur et la barre de progression */
+  & .claim-row {
+    & > *:not(.value-input):not(.progress-bar) {
+      display: none;
+    }
+  }
+}
